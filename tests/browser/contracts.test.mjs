@@ -68,6 +68,230 @@ registerSampleContracts({ getHarness: () => harness, exportModel });
 registerDesignerContracts({ getHarness: () => harness });
 registerAiGuidanceContracts({ getHarness: () => harness, exportModel });
 
+for (const theme of ["light", "dark"]) {
+  test(`regression: PNG export preserves rendered nodes, curved flows and labels (${theme})`, async () => {
+    await harness.run(`regression: PNG canvas fidelity (${theme})`, async ({ page, observations }) => {
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      const input = modelFixture();
+      input.doc.nodes[0].title = "Client with a\nmultiline title";
+      input.doc.nodes[0].color = "#f4c18b";
+      input.doc.edges[0].waypoints = [{ id: "w_export", x: 340, y: 340 }];
+      input.doc.edges[0].sourceHandle = "bottom";
+      input.doc.edges[0].targetHandle = "bottom";
+      input.doc.edges[0].problem = true;
+      input.doc.edges[1].waypoints = [{ id: "w_export_parallel", x: 340, y: 40 }];
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "png-fidelity.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(input)),
+      });
+      if (theme === "dark") {
+        await page.getByRole("button", { name: "Settings", exact: true }).click();
+        await page.getByRole("menuitemcheckbox", { name: /Dark Theme/ }).click();
+        await page.keyboard.press("Escape");
+      }
+      await page.getByRole("button", { name: /^Reset canvas zoom to 100%/ }).click();
+      await until(() => page.locator(".react-flow__viewport").evaluate(element =>
+        Math.abs(new DOMMatrix(getComputedStyle(element).transform).a - 1) < 0.0001), "100% zoom");
+      const before = await exportModel(page);
+      const client = node(page, "n_client").locator(".ps-node");
+      await client.locator("img").evaluate(image => image.decode());
+      await page.mouse.move(700, 800);
+      await page.mouse.down();
+      await page.mouse.move(1100, 800, { steps: 10 });
+      await page.mouse.up();
+      const box = await client.boundingBox();
+      assert.ok(box && box.x >= 0 && box.y >= 0, "Reference node is entirely onscreen");
+      const reference = await page.screenshot({ clip: box });
+      const geometry = await page.evaluate(() => {
+        const node = document.querySelector('[data-id="n_client"] .ps-node').getBoundingClientRect();
+        const path = document.querySelector('[data-id="e_request"] .react-flow__edge-path');
+        const matrix = path.getScreenCTM();
+        const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
+        const previous = path.getPointAtLength(path.getTotalLength() - 3).matrixTransform(matrix);
+        const angle = Math.atan2(end.y - previous.y, end.x - previous.x);
+        return {
+          node: { x: node.x, y: node.y },
+          arrow: {
+            x: end.x - 6 * Math.cos(angle) - 3 * Math.sin(angle),
+            y: end.y - 6 * Math.sin(angle) + 3 * Math.cos(angle),
+          },
+          curve: [0.2, 0.35, 0.65, 0.8].map(fraction => {
+            const point = path.getPointAtLength(path.getTotalLength() * fraction).matrixTransform(matrix);
+            return { x: point.x, y: point.y };
+          }),
+        };
+      });
+      await page.getByRole("button", { name: "Export", exact: true }).click();
+      const downloadEvent = page.waitForEvent("download");
+      await page.getByRole("menuitem", { name: /Diagram image \(\.png\)/ }).click();
+      const download = await downloadEvent;
+      assert.match(download.suggestedFilename(), /-diagram\.png$/);
+      const chunks = [];
+      for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+      const png = Buffer.concat(chunks);
+      const fidelity = await page.evaluate(async ({ exported, reference, geometry }) => {
+        const raster = async (url, scale) => {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width * scale;
+          canvas.height = image.height * scale;
+          const context = canvas.getContext("2d");
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          return { width: canvas.width, height: canvas.height,
+            pixels: context.getImageData(0, 0, canvas.width, canvas.height).data };
+        };
+        const output = await raster(exported, 0.5);
+        const expected = await raster(reference, 1);
+        const colorOrigin = image => {
+          let x = Infinity, y = Infinity;
+          for (let row = 0; row < image.height; row++) {
+            for (let col = 0; col < image.width; col++) {
+              const i = (row * image.width + col) * 4;
+              if (Math.abs(image.pixels[i] - 244) < 4 && Math.abs(image.pixels[i + 1] - 193) < 4 &&
+                Math.abs(image.pixels[i + 2] - 139) < 4) {
+                x = Math.min(x, col); y = Math.min(y, row);
+              }
+            }
+          }
+          return { x, y };
+        };
+        const actualOrigin = colorOrigin(output), expectedOrigin = colorOrigin(expected);
+        if (![actualOrigin.x, actualOrigin.y, expectedOrigin.x, expectedOrigin.y].every(Number.isFinite)) {
+          throw new Error(`Missing node background: ${JSON.stringify({ actualOrigin, expectedOrigin, output: [output.width, output.height], expected: [expected.width, expected.height] })}`);
+        }
+        const dx = Math.round(actualOrigin.x - expectedOrigin.x);
+        const dy = Math.round(actualOrigin.y - expectedOrigin.y);
+        let different = 0;
+        for (let y = 0; y < expected.height; y++) {
+          for (let x = 0; x < expected.width; x++) {
+            const a = ((y + dy) * output.width + x + dx) * 4;
+            const b = (y * expected.width + x) * 4;
+            let matches = false;
+            // Screen capture and 2x rasterization round fractional CSS pixels differently.
+            for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+              const px = x + dx + ox, py = y + dy + oy;
+              if (px < 0 || px >= output.width || py < 0 || py >= output.height) continue;
+              const pixel = a + (oy * output.width + ox) * 4;
+              if ([0, 1, 2].every(channel => Math.abs(output.pixels[pixel + channel] - expected.pixels[b + channel]) <= 25)) matches = true;
+            }
+            if (!matches) different++;
+          }
+        }
+        const hasRed = (point, radius) => {
+          const x = Math.round(point.x - geometry.node.x + dx);
+          const y = Math.round(point.y - geometry.node.y + dy);
+          for (let oy = -radius; oy <= radius; oy++) for (let ox = -radius; ox <= radius; ox++) {
+            const i = ((y + oy) * output.width + x + ox) * 4;
+            if (output.pixels[i] > 170 && output.pixels[i + 1] < 100 && output.pixels[i + 2] < 100) return true;
+          }
+          return false;
+        };
+        const background = output.pixels.slice(0, 4);
+        const gridDots = [];
+        for (const [left, top] of [[0, 0], [output.width - 40, output.height - 40]]) {
+          let dots = 0;
+          for (let y = top; y < top + 32; y++) for (let x = left; x < left + 32; x++) {
+            const i = (y * output.width + x) * 4;
+            if ([0, 1, 2].some(channel => Math.abs(output.pixels[i + channel] - background[channel]) > 15)) dots++;
+          }
+          gridDots.push(dots);
+        }
+        return { difference: different / (expected.width * expected.height),
+          curveHits: geometry.curve.map(point => hasRed(point, 2)), arrow: hasRed(geometry.arrow, 0),
+          background: Array.from(background), gridDots,
+          width: output.width, height: output.height };
+      }, { exported: `data:image/png;base64,${png.toString("base64")}`,
+        reference: `data:image/png;base64,${reference.toString("base64")}`, geometry });
+      assert.ok(fidelity.difference < 0.12, `Exported node matches the actual icon, multiline text and dimensions: ${JSON.stringify(fidelity)}`);
+      assert.deepEqual(fidelity.curveHits, [true, true, true, true], "Problem flow follows the rendered spline, not center-to-center straight segments");
+      assert.equal(fidelity.arrow, true, "The SVG marker retains its arrowhead fill away from the flow centerline");
+      assert.equal(fidelity.background[3], 255, "Canvas background is opaque");
+      assert.ok(fidelity.gridDots.every(count => count > 0), "Grid covers the full exported bounds, not only the onscreen viewport");
+      assert.ok(fidelity.width < 700, "Other-scenario nodes are excluded");
+      assert.deepEqual((await exportModel(page)).doc, before.doc, "Image export does not mutate document geometry or content");
+      observations.fidelity = fidelity;
+    });
+  });
+}
+
+test("regression: PNG export includes offscreen boundaries and annotations and matches report images across zoom levels", async () => {
+  await harness.run("regression: PNG full-scene bounds and report image", async ({ page }) => {
+    const input = modelFixture();
+    input.doc.nodes[1].position = { x: 2200, y: 120 };
+    input.doc.textAnnotations = [{
+      id: "a_export", text: "Offscreen annotation\nwith a second line",
+      position: { x: -420, y: -280 }, size: { width: 240, height: 100 },
+    }];
+    input.doc.scenarios[0].textAnnotationIds = ["a_export"];
+    input.doc.boundaries = [{
+      id: "b_export", type: "security", title: "Exported security boundary",
+      position: { x: -480, y: -340 }, size: { width: 2920, height: 600 }, nodeIds: ["n_client", "n_api"],
+    }];
+    input.doc.scenarios[0].boundaryIds = ["b_export"];
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "png-bounds.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(input)),
+    });
+    await node(page, "n_api").waitFor();
+    const downloadExport = async name => {
+      await page.getByRole("button", { name: "Export", exact: true }).click();
+      const event = page.waitForEvent("download");
+      await page.getByRole("menuitem", { name }).click();
+      const chunks = [];
+      for await (const chunk of await (await event).createReadStream()) chunks.push(chunk);
+      return Buffer.concat(chunks);
+    };
+    const report = (await downloadExport(/Review report \(\.html\)/)).toString("utf8");
+    const reportImage = report.match(/src="(data:image\/png;base64,[^"]+)"/)?.[1];
+    assert.ok(reportImage, "Review report embeds the rendered diagram, not a missing-image fallback");
+    await page.getByRole("button", { name: /^Reset canvas zoom to 100%/ }).click();
+    await until(() => page.locator(".react-flow__viewport").evaluate(element =>
+      Math.abs(new DOMMatrix(getComputedStyle(element).transform).a - 1) < 0.0001), "100% zoom");
+    await page.context().setOffline(true);
+    const png = await downloadExport(/Diagram image \(\.png\)/);
+    await page.context().setOffline(false);
+    const result = await page.evaluate(async ({ reportImage, png }) => {
+      const image = async src => {
+        const img = new Image(); img.src = src; await img.decode(); return img;
+      };
+      const first = await image(reportImage), second = await image(png);
+      const canvas = document.createElement("canvas");
+      canvas.width = second.width / 2; canvas.height = second.height / 2;
+      const context = canvas.getContext("2d");
+      context.drawImage(second, 0, 0, canvas.width, canvas.height);
+      const viewport = document.querySelector(".react-flow__viewport").getBoundingClientRect();
+      const elements = [...document.querySelectorAll(".react-flow__node, .react-flow__node *, .react-flow__edge-path, .ps-edge-label, .ps-edge-label *")]
+        .map(element => element.getBoundingClientRect()).filter(rect => rect.width || rect.height);
+      const left = Math.floor(Math.min(...elements.map(rect => rect.left - viewport.left)) - 48);
+      const top = Math.floor(Math.min(...elements.map(rect => rect.top - viewport.top)) - 48);
+      const ink = selector => {
+        const rect = document.querySelector(selector).getBoundingClientRect();
+        const pixels = context.getImageData(Math.round(rect.left - viewport.left - left),
+          Math.round(rect.top - viewport.top - top), Math.floor(rect.width), Math.floor(rect.height)).data;
+        let count = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i] < 100 && pixels[i + 1] < 100 && pixels[i + 2] < 100) count++;
+        }
+        return count;
+      };
+      return { first: [first.width, first.height], second: [second.width, second.height],
+        annotationInk: ink(".ps-text-annotation-content"), boundaryInk: ink(".ps-boundary-title") };
+    }, { reportImage, png: `data:image/png;base64,${png.toString("base64")}` });
+    assert.ok(result.second[0] > 5800 && result.second[1] > 1200, "Full scene includes negative bounds and far-offscreen nodes");
+    assert.ok(result.first.every((dimension, i) => Math.abs(dimension - result.second[i]) <= 4),
+      `Image dimensions are independent of canvas zoom: ${JSON.stringify(result)}`);
+    assert.ok(result.annotationInk > 100 && result.boundaryInk > 100, "Annotation and boundary text are actually rasterized");
+    const filtered = modelFixture();
+    filtered.view.filter.text = "Client";
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "png-filtered.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(filtered)),
+    });
+    await until(async () => await page.locator(".react-flow__node-process").count() === 1, "Filtered scene");
+    const filteredPng = await downloadExport(/Diagram image \(\.png\)/);
+    assert.ok(filteredPng.readUInt32BE(16) < 600, "PNG excludes nodes hidden by the current filter");
+  });
+});
+
 test("regression: Work queue saves decisions and ADO configuration without local network submission", async () => {
   await harness.run("regression: Work queue and ADO configuration", async ({ page }) => {
     const input = modelFixture();

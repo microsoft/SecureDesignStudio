@@ -70,6 +70,13 @@ including failed cases, as seven-day workflow artifacts.
 
 ## What is actually covered
 
+PNG-export contracts compare a rendered node against the downloaded image in
+both themes, including its icon, multiline title and actual dimensions. They
+sample curved flow geometry and arrowhead fill, check opaque background/grid
+coverage, and verify export leaves the native document unchanged.
+Additional cases cover negative/offscreen bounds, boundary and annotation
+text, current filters, zoom-independent report images, and export while offline.
+
 ### Explicit localhost ADO connection
 
 `npm run test:ado:local` runs separately from the browser union because it owns
