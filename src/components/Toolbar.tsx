@@ -737,7 +737,7 @@ export function Toolbar() {
     closeCommandMenu();
     if (!activeScenario || viewMode !== "graph") return;
     try {
-      const image = await captureDiagramPng(doc, activeScenario);
+      const image = await captureDiagramPng();
       downloadDiagramPng(image, documentFileName);
     } catch (error) {
       window.alert(`Diagram image export failed: ${(error as Error).message}`);
@@ -751,7 +751,7 @@ export function Toolbar() {
     let diagramDataUrl: string | undefined;
     if (viewMode === "graph") {
       try {
-        diagramDataUrl = await captureDiagramPng(doc, activeScenario);
+        diagramDataUrl = await captureDiagramPng();
       } catch {
         // The report remains useful if a browser cannot rasterize the canvas.
       }

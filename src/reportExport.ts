@@ -1,5 +1,5 @@
 import type { CatalogDefinitionSnapshot, PsDocument, Scenario } from "./types";
-import { DFD_ROLE_LABELS, nodeDfdSummary, flowDfdSummary, resolveNodeReviewScope, formatDfdValue } from "./dfdSemantics";
+import { nodeDfdSummary, flowDfdSummary, resolveNodeReviewScope, formatDfdValue } from "./dfdSemantics";
 import {
   RETENTION_LABELS,
   ISSUE_NOT_EVALUATED_LABELS,
@@ -52,101 +52,136 @@ export function downloadBlob(blob: Blob, fileName: string, ownerDocument: Docume
   }
 }
 
-export async function captureDiagramPng(
-  doc: PsDocument,
-  scenario: Scenario,
-): Promise<string> {
-  const nodes = doc.nodes.filter((node) => scenario.nodeIds.includes(node.id));
-  const annotations = (doc.textAnnotations ?? []).filter(annotation => scenario.textAnnotationIds?.includes(annotation.id));
-  const edges = doc.edges.filter((edge) => scenario.edgeIds.includes(edge.id));
-  const boundaries = doc.boundaries.filter((boundary) =>
-    scenario.boundaryIds.includes(boundary.id),
-  );
-  if (nodes.length === 0 && boundaries.length === 0 && annotations.length === 0) {
-    throw new Error("The current scenario has no diagram elements to export.");
-  }
+function inlineDiagramImage(image: HTMLImageElement, original: HTMLImageElement): void {
+  const source = original.currentSrc || original.src;
+  image.removeAttribute("srcset");
+  if (source.startsWith("data:")) return;
+  const style = getComputedStyle(original);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil((parseFloat(style.width) || original.naturalWidth) * 2));
+  canvas.height = Math.max(1, Math.ceil((parseFloat(style.height) || original.naturalHeight) * 2));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("A diagram icon could not be embedded for export.");
+  // Use the already decoded image so exporting also works without a network.
+  context.drawImage(original, 0, 0, canvas.width, canvas.height);
+  image.src = canvas.toDataURL("image/png");
+}
 
-  const nodeWidth = 180;
-  const nodeHeight = 72;
+function cloneDiagramElement<T extends HTMLElement | SVGElement>(element: T): T {
+  const clone = element.cloneNode(true) as T;
+  const sources = [element, ...element.querySelectorAll("*")];
+  const targets = [clone, ...clone.querySelectorAll("*")];
+  sources.forEach((source, index) => {
+    const target = targets[index];
+    if (!(target instanceof HTMLElement || target instanceof SVGElement)) return;
+    const computed = getComputedStyle(source);
+    for (const property of computed) {
+      // Computed SVG references are absolute URLs; the clone needs local defs.
+      const value = computed.getPropertyValue(property).replace(/url\(["']?[^"'#)]*#([^"')]+)["']?\)/g, 'url("#$1")');
+      target.style.setProperty(property, value);
+    }
+    target.style.setProperty("animation", "none");
+    target.style.setProperty("transition", "none");
+    if (source instanceof HTMLTextAreaElement && target instanceof HTMLTextAreaElement) {
+      target.textContent = source.value;
+    }
+  });
+  return clone;
+}
+
+export async function captureDiagramPng(): Promise<string> {
+  await document.fonts.ready;
+  // Let menu dismissal and pending React Flow measurements reach the DOM.
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+  if (!viewport) throw new Error("Open Diagram view before exporting an image.");
+  if (!viewport.querySelector(".react-flow__node")) {
+    throw new Error("The current view has no diagram elements to export.");
+  }
+  const originalImages = Array.from(viewport.querySelectorAll("img"));
+  await Promise.all(originalImages.map(image => image.decode()));
+
+  const origin = viewport.getBoundingClientRect();
+  const zoom = new DOMMatrix(getComputedStyle(viewport).transform).a;
+  const bounds = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+  for (const element of viewport.querySelectorAll(".react-flow__node, .react-flow__node *, .react-flow__edge-path, .ps-edge-label, .ps-edge-label *")) {
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden") continue;
+    const rect = element.getBoundingClientRect();
+    if (!rect.width && !rect.height) continue;
+    bounds.left = Math.min(bounds.left, (rect.left - origin.left) / zoom);
+    bounds.top = Math.min(bounds.top, (rect.top - origin.top) / zoom);
+    bounds.right = Math.max(bounds.right, (rect.right - origin.left) / zoom);
+    bounds.bottom = Math.max(bounds.bottom, (rect.bottom - origin.top) / zoom);
+  }
   const padding = 48;
-  const xs = [
-    ...annotations.flatMap(annotation => [annotation.position.x, annotation.position.x + Math.max(annotation.size.width, ...annotation.text.split("\n").map(line => line.length * 8 + 16))]),
-    ...nodes.flatMap((node) => [node.position.x, node.position.x + nodeWidth]),
-    ...boundaries.flatMap((boundary) => [
-      boundary.position.x,
-      boundary.position.x + boundary.size.width,
-    ]),
-  ];
-  const ys = [
-    ...annotations.flatMap(annotation => [annotation.position.y, annotation.position.y + Math.max(annotation.size.height, annotation.text.split("\n").length * 20 + 16)]),
-    ...nodes.flatMap((node) => [node.position.y, node.position.y + nodeHeight]),
-    ...boundaries.flatMap((boundary) => [
-      boundary.position.y,
-      boundary.position.y + boundary.size.height,
-    ]),
-  ];
-  const minX = Math.min(...xs) - padding;
-  const minY = Math.min(...ys) - padding;
-  const width = Math.max(640, Math.max(...xs) - minX + padding);
-  const height = Math.max(360, Math.max(...ys) - minY + padding);
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const offset = (value: number, minimum: number) => value - minimum;
-
-  const boundarySvg = boundaries
-    .map((boundary) => {
-      const color = boundary.type === "privacy" ? "#7c3aed" : "#0f6cbd";
-      return `<g><rect x="${offset(boundary.position.x, minX)}" y="${offset(boundary.position.y, minY)}" width="${boundary.size.width}" height="${boundary.size.height}" rx="6" fill="${color}" fill-opacity="0.055" stroke="${color}" stroke-width="2" stroke-dasharray="9 6"/><text x="${offset(boundary.position.x, minX) + 12}" y="${offset(boundary.position.y, minY) + 22}" font-size="13" font-weight="600" fill="${color}">${escapeHtml(boundary.title)}</text></g>`;
-    })
-    .join("");
-  const edgeSvg = edges
-    .map((edge) => {
-      const source = nodeById.get(edge.source);
-      const target = nodeById.get(edge.target);
-      if (!source || !target) return "";
-      const points = [
-        { x: source.position.x + nodeWidth / 2, y: source.position.y + nodeHeight / 2 },
-        ...(edge.waypoints ?? []),
-        { x: target.position.x + nodeWidth / 2, y: target.position.y + nodeHeight / 2 },
-      ];
-      const path = points
-        .map((point, index) =>
-          `${index === 0 ? "M" : "L"} ${offset(point.x, minX)} ${offset(point.y, minY)}`,
-        )
-        .join(" ");
-      const middle = points[Math.floor(points.length / 2)];
-      const labelX = offset(middle.x, minX);
-      const labelY = offset(middle.y, minY) - 9;
-      const number = scenario.edgeNumbers[edge.id] ?? "";
-      return `<g><path d="${path}" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/><rect x="${labelX - 68}" y="${labelY - 14}" width="136" height="21" rx="4" fill="#ffffff" stroke="#cbd5e1"/><text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="11" fill="#1e293b">${escapeHtml(number ? `${number}. ${edge.title}` : edge.title)}</text></g>`;
-    })
-    .join("");
-  const nodeSvg = nodes
-    .map((node) => {
-      const x = offset(node.position.x, minX);
-      const y = offset(node.position.y, minY);
-      const scope = resolveNodeReviewScope(node, scenario, doc.nodeTypes);
-      return `<g><title>${escapeHtml(nodeDfdSummary(node, doc, scenario))}</title><rect x="${x}" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="${scope.role.role === "Process" ? 18 : scope.role.role === "DataStore" ? 12 : 0}" fill="${node.color ?? "#ffffff"}" stroke="#334155" stroke-width="2"${scope.disposition === "outOfScope" ? ' stroke-dasharray="5 3"' : ""}/><text x="${x + 12}" y="${y + 22}" font-size="14" font-weight="600" fill="#0f172a">${escapeHtml(node.title)}</text><text x="${x + 12}" y="${y + 39}" font-size="11" fill="#64748b">${escapeHtml(nodeTypeLabel(node.type, doc.nodeTypes))}</text><text x="${x + 12}" y="${y + 53}" font-size="10" fill="#334155">${escapeHtml(DFD_ROLE_LABELS[scope.role.role])} / ${escapeHtml(scope.disposition)}</text></g>`;
-    })
-    .join("");
-  const annotationSvg = annotations.map(annotation => `<g><title>${escapeHtml(annotation.text)}</title><text xml:space="preserve" font-size="14" fill="#242424">${annotation.text.split("\n").map((line, index) =>
-    `<tspan x="${offset(annotation.position.x, minX) + 8}" y="${offset(annotation.position.y, minY) + 20 + index * 20}">${escapeHtml(line)}</tspan>`).join("")}</text></g>`).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#475569"/></marker><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#dbe3ec"/></pattern></defs><rect width="100%" height="100%" fill="#f8fafc"/><rect width="100%" height="100%" fill="url(#grid)"/>${boundarySvg}${edgeSvg}${nodeSvg}${annotationSvg}</svg>`;
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(width * 2);
-    canvas.height = Math.ceil(height * 2);
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas export is unavailable in this browser.");
-    context.scale(2, 2);
-    context.drawImage(image, 0, 0, width, height);
-    return canvas.toDataURL("image/png");
-  } finally {
-    URL.revokeObjectURL(url);
+  const x = Math.floor(bounds.left - padding);
+  const y = Math.floor(bounds.top - padding);
+  const width = Math.ceil(bounds.right - x + padding);
+  const height = Math.ceil(bounds.bottom - y + padding);
+  if (!Number.isFinite(width + height) || width <= 0 || height <= 0) {
+    throw new Error("The diagram is not ready to export. Wait for it to finish rendering.");
   }
+  const pixelWidth = width * 2, pixelHeight = height * 2;
+  if (pixelWidth > 16384 || pixelHeight > 16384 || pixelWidth * pixelHeight > 64_000_000) {
+    throw new Error("The diagram is too large for a PNG image. Filter the view or export a smaller scenario.");
+  }
+
+  // Clone the real scene, not a second approximation of its model geometry.
+  const clone = cloneDiagramElement(viewport);
+  clone.querySelectorAll("img").forEach((image, index) => inlineDiagramImage(image, originalImages[index]));
+  clone.style.transform = `translate(${-x}px, ${-y}px)`;
+  clone.style.transformOrigin = "0 0";
+  clone.style.width = `${width}px`;
+  clone.style.height = `${height}px`;
+  clone.style.overflow = "visible";
+  clone.style.zIndex = "1";
+  const container = document.createElement("div");
+  container.style.cssText = `position:relative;width:${width}px;height:${height}px;overflow:hidden`;
+  const flow = viewport.closest(".react-flow");
+  for (let ancestor = flow; ancestor; ancestor = ancestor.parentElement) {
+    const color = getComputedStyle(ancestor).backgroundColor;
+    if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") {
+      container.style.backgroundColor = color;
+      break;
+    }
+  }
+  const background = flow?.querySelector<SVGSVGElement>(".react-flow__background");
+  if (background && flow) {
+    const grid = cloneDiagramElement(background);
+    const flowRect = flow.getBoundingClientRect();
+    const left = origin.left - flowRect.left + x * zoom;
+    const top = origin.top - flowRect.top + y * zoom;
+    grid.setAttribute("viewBox", `${left} ${top} ${width * zoom} ${height * zoom}`);
+    grid.style.width = `${width}px`;
+    grid.style.height = `${height}px`;
+    grid.style.zIndex = "0";
+    const rect = grid.querySelector("rect");
+    if (rect) {
+      rect.style.setProperty("x", `${left}px`);
+      rect.style.setProperty("y", `${top}px`);
+      rect.style.width = `${width * zoom}px`;
+      rect.style.height = `${height * zoom}px`;
+    }
+    container.appendChild(grid);
+  }
+  container.appendChild(clone);
+  const content = new XMLSerializer().serializeToString(container);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${content}</foreignObject></svg>`;
+  const image = new Image();
+  // A data URL keeps the self-contained foreignObject origin-clean for canvas.
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas export is unavailable in this browser.");
+  context.scale(2, 2);
+  context.drawImage(image, 0, 0, width, height);
+  const result = canvas.toDataURL("image/png");
+  if (!result.startsWith("data:image/png;")) throw new Error("The browser could not create the PNG image.");
+  return result;
 }
 
 export function downloadDiagramPng(dataUrl: string, documentFileName: string): void {
