@@ -5,6 +5,14 @@ export interface ScenarioSourceOption {
   name: string;
 }
 
+// First-run entry points for existing work. The splash blocks the menu bar,
+// so without these a user must create a throwaway scenario before opening.
+export interface ExistingWorkActions {
+  open: () => void;
+  importTm7: () => void;
+  importJson: () => void;
+}
+
 export function NewScenarioDialog({
   defaultName = "Scenario 1",
   sourceOptions = [],
@@ -12,12 +20,14 @@ export function NewScenarioDialog({
   onCancel,
   onSubmit,
   onDesign,
+  existingWork,
 }: {
   defaultName?: string;
   sourceOptions?: ScenarioSourceOption[];
   required?: boolean;
   onCancel: () => void;
   onDesign?: () => void;
+  existingWork?: ExistingWorkActions;
   onSubmit: (data: {
     name: string;
     description: string;
@@ -65,6 +75,20 @@ export function NewScenarioDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="ps-new-scenario-title"
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+            "button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled)",
+          )).filter((element) => element.offsetParent !== null);
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          const boundary = event.shiftKey ? first : last;
+          const destination = event.shiftKey ? last : first;
+          if (destination && document.activeElement === boundary) {
+            event.preventDefault();
+            destination.focus();
+          }
+        }}
       >
         <header className="ps-modal-header">
           <div>
@@ -87,8 +111,34 @@ export function NewScenarioDialog({
           {required && (
             <p className="ps-scenario-splash-intro">
               Scenarios organize the nodes, data flows, and boundaries in your
-              model. Create one to begin designing.
+              model. Create one to begin designing{existingWork ? ", or open existing work" : ""}.
             </p>
+          )}
+          {required && existingWork && (
+            <section
+              className="ps-scenario-splash-existing"
+              aria-labelledby="ps-scenario-existing-title"
+            >
+              <h3 id="ps-scenario-existing-title">Already have a model?</h3>
+              <div className="ps-scenario-splash-existing-actions">
+                <button type="button" onClick={existingWork.open}>
+                  Open model (.tma)…
+                </button>
+                <button type="button" onClick={existingWork.importTm7}>
+                  Import TM7…
+                </button>
+                <button
+                  type="button"
+                  onClick={existingWork.importJson}
+                  title={'Import a scenario/DFD JSON file with the supported "scenarios" and "dfds" structure.'}
+                >
+                  Import JSON…
+                </button>
+              </div>
+            </section>
+          )}
+          {required && existingWork && (
+            <h3 className="ps-scenario-splash-new-title">Or start a new scenario</h3>
           )}
           <label>
             Title

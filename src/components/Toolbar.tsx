@@ -206,6 +206,13 @@ export function Toolbar() {
   const pmFileRef = useRef<HTMLInputElement>(null);
   const restoreFileCommandFocus = () => {
     window.setTimeout(() => {
+      const splash = document.querySelector<HTMLElement>(".ps-scenario-splash");
+      if (splash) {
+        if (!splash.contains(document.activeElement)) {
+          splash.querySelector<HTMLInputElement>('input[type="text"]')?.focus();
+        }
+        return;
+      }
       document
         .querySelector<HTMLButtonElement>(
           'button[aria-controls="ps-command-menu-file"]',
@@ -3273,6 +3280,11 @@ export function Toolbar() {
         defaultName={`Scenario ${doc.scenarios.length + 1}`}
         sourceOptions={doc.scenarios.map((s) => ({ id: s.id, name: s.name }))}
         required={doc.scenarios.length === 0}
+        existingWork={doc.scenarios.length === 0 ? {
+          open: () => executeCommand("file.open"),
+          importTm7: () => executeCommand("file.importTm7"),
+          importJson: () => executeCommand("file.importTmc"),
+        } : undefined}
         onCancel={() => {
           setNewScenarioOpen(false);
           restoreCommandFocus();
