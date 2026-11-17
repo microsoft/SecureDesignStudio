@@ -1,6 +1,7 @@
 import { SERVICES } from "./services";
 import { normalizeWorkItem } from "./workItems";
 import { normalizeTextAnnotations, normalizeTextAnnotationIds } from "./textAnnotations";
+import { applyDeclutterLayout, createDeclutterLayout, type DeclutterInput } from "./declutterLayout";
 import type { PsTextAnnotation } from "./types";
 import { normalizeDfdValue, normalizeNodeScope, resolveNodeReviewScope } from "./dfdSemantics";
 import {
@@ -693,6 +694,7 @@ interface StoreApi {
   ) => void;
 
   // Edges
+  declutterDiagram: (input: DeclutterInput) => string | null;
   createEdge: (
     source: string,
     target: string,
@@ -2051,6 +2053,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const declutterDiagram = useCallback((input: DeclutterInput) => {
+    const layout = createDeclutterLayout(input);
+    const next = applyDeclutterLayout(docRef.current, layout);
+    snapshot();
+    setDoc(next);
+    setSelection(null);
+    return layout.notice;
+  }, [setDoc, snapshot, setSelection]);
 
   const deleteNode = useCallback((id: string) => {
     snapshot();
@@ -4673,6 +4684,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     finishNodeMove,
     setNodeSize,
     moveDiagramItems,
+    declutterDiagram,
     createEdge,
     updateEdge,
     deleteEdge,
@@ -5262,6 +5274,9 @@ export function normalizeDoc(
     nodes: normalizedNodes,
     ...(textAnnotations !== undefined ? { textAnnotations } : {}),
     edges: rawEdges.map((e) => {
+      if (e.compactLabel !== undefined && typeof e.compactLabel !== "boolean") {
+        throw new Error(`Invalid compact label setting for flow ${e.id ?? "(unknown)"}.`);
+      }
       const authenticationTypes = normalizeAuthTypes(e, authenticationDefinitions);
       const rawPi = (e as { productionIdentity?: unknown }).productionIdentity;
       const productionIdentity = normalizeEdgeProductionIdentity(rawPi);
@@ -5286,6 +5301,7 @@ export function normalizeDoc(
         audience: optionalText(e.audience),
         constraints: optionalText(e.constraints),
         problem: e.problem === true ? true : undefined,
+        ...(e.compactLabel !== undefined ? { compactLabel: e.compactLabel } : {}),
         waypoints: (e.waypoints ?? []).map((w) => ({
           id: w?.id ?? uid("w"),
           ...positionOr(w),

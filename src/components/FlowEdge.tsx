@@ -9,6 +9,7 @@ import { useStore } from "../store";
 import { CommentBadges } from "./CommentBadges";
 import { IssueBadges } from "./IssueBadges";
 import type { Position, Waypoint } from "../types";
+import { useUiShell } from "../uiShell";
 
 // Module-level state for click detection — survives FlowEdge remounts.
 const lastEdgePointerDownTimes = new Map<string, number>();
@@ -17,6 +18,7 @@ export interface FlowEdgeData {
   title: string;
   number: number | null;
   waypoints: Waypoint[];
+  compactLabel?: boolean;
   problem?: boolean;
   commentActive?: number;
   commentResolved?: number;
@@ -115,6 +117,8 @@ export function FlowEdge({
     setEditingEdgeTitleValue,
   } = useStore();
   const { getZoom, screenToFlowPosition } = useReactFlow();
+  const { openInspector } = useUiShell();
+  const compactLabel = data?.compactLabel === true;
 
   // Edit state lives in the store so it survives FlowEdge remounts. Entering
   // edit mode seeds the live value from the current edge title; the input
@@ -228,11 +232,14 @@ export function FlowEdge({
     ? `Communication profile: ${d.protocolLabel}${d.protocolReviewRequired ? " (review required)" : ""}. ${d.protocolDescription ?? ""} ${d.protocolSemanticsDescription ?? ""} Declared design intent only; not evidence of negotiated protection.`
     : "Communication profile is not specified; this is not proof of plaintext or encryption";
   const communicationSummary = `${protocolSummary}. ${authenticationSummary}. Caller Application ID: ${d.applicationId || "Not specified"}.`;
+  const edgeTitle = `${d.number != null ? `#${d.number} ` : ""}${d.title || "(untitled)"}. ${communicationSummary} Data classifications: ${d.classificationLabels?.join(", ") || "Not specified"}. Comments: ${d.commentActive ?? 0} active, ${d.commentResolved ?? 0} resolved. Issues: ${d.issueActive ?? 0} active, ${d.issueResolved ?? 0} resolved.${d.problem ? " Marked as a problem." : ""}`;
 
   const source: Position = { x: sourceX, y: sourceY };
   const target: Position = { x: targetX, y: targetY };
   const polyline: Position[] = [source, ...d.waypoints, target];
-  const path = splinePath(polyline);
+  const path = compactLabel
+    ? polyline.map((point, i) => `${i ? "L" : "M"} ${point.x},${point.y}`).join(" ")
+    : splinePath(polyline);
   const strokeColor = d.problem
     ? "#dc2626"
     : d.simulationActive
@@ -522,11 +529,23 @@ export function FlowEdge({
       <EdgeLabelRenderer>
         <div
           ref={setLabelEl}
-          className={`ps-edge-label nodrag nopan ${selected ? "selected" : ""} ${
+          className={`ps-edge-label nodrag nopan ${compactLabel ? "ps-edge-label-compact" : ""} ${selected ? "selected" : ""} ${
             d.simulationActive ? "ps-simulation-active" : ""
           } ${d.simulationCurrent ? "ps-simulation-current" : ""}`}
           data-edge-id={id}
-          title={communicationSummary}
+          title={edgeTitle}
+          role={compactLabel ? "button" : undefined}
+          tabIndex={compactLabel ? 0 : undefined}
+          aria-label={compactLabel ? `${edgeTitle} Open flow properties.` : undefined}
+          onKeyDown={compactLabel ? event => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.stopPropagation();
+              setSelection({ kind: "edge", id });
+              openInspector("properties");
+            }
+          } : undefined}
           style={{
             transform: `translate(-50%, -50%) translate(${labelPos.x}px, ${labelPos.y}px)`,
             cursor: editingTitle ? "text" : "move",
@@ -536,6 +555,10 @@ export function FlowEdge({
           <span className="ps-edge-num">
             {d.number != null ? `#${d.number}` : "—"}
           </span>
+          {compactLabel && (d.problem || d.issueActive || d.commentActive || d.authenticationReviewRequired ||
+            d.protocolReviewRequired || !d.authenticationLabels?.length) && (
+            <span className="ps-edge-compact-attention" aria-hidden="true">!</span>
+          )}
           {(d.protocolLabel || d.protocolReviewRequired) && (
             <span
               className={`ps-edge-protocol-badge ${d.protocolReviewRequired ? "ps-edge-protocol-review" : ""}`}
@@ -616,11 +639,13 @@ export function FlowEdge({
               }}
             />
           ) : (
-            <span
-              className="ps-edge-title"
-              title="Double-click to rename · Ctrl/Cmd+Enter to save · Esc to cancel"
-            >
-              {d.title || "(untitled)"}
+            <span className="ps-edge-label-content">
+              <span
+                className="ps-edge-title"
+                title={compactLabel ? edgeTitle : "Double-click to rename · Ctrl/Cmd+Enter to save · Esc to cancel"}
+              >
+                {d.title || "(untitled)"}
+              </span>
             </span>
           )}
           <CommentBadges

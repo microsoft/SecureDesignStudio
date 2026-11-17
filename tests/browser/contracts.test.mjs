@@ -23,6 +23,7 @@ import { registerSampleContracts } from "./sample-contracts.mjs";
 import { registerDesignerContracts } from "./designer-contracts.mjs";
 import { registerAiGuidanceContracts } from "./ai-guidance-contracts.mjs";
 import { registerFirstRunContracts } from "./first-run-contracts.mjs";
+import { registerDeclutterContracts } from "./declutter-contracts.mjs";
 import { unzipSync, strFromU8 } from "fflate";
 import { DOMParser } from "@xmldom/xmldom";
 
@@ -69,6 +70,7 @@ registerSampleContracts({ getHarness: () => harness, exportModel });
 registerDesignerContracts({ getHarness: () => harness });
 registerAiGuidanceContracts({ getHarness: () => harness, exportModel });
 registerFirstRunContracts({ getHarness: () => harness });
+registerDeclutterContracts({ getHarness: () => harness, exportModel });
 
 for (const theme of ["light", "dark"]) {
   test(`regression: PNG export preserves rendered nodes, curved flows and labels (${theme})`, async () => {

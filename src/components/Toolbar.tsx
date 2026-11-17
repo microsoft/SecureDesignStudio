@@ -125,6 +125,7 @@ type CommandId =
   | "preferences.autosave.15000"
   | "preferences.reset"
   | "canvas.fitView"
+  | "canvas.declutter"
   | "history.undo"
   | "history.redo"
   | "collaboration.share"
@@ -189,6 +190,7 @@ export function Toolbar() {
     openInspector,
     toggleInspector,
     requestFitView,
+    requestDeclutter,
     darkTheme,
     setDarkTheme,
     autosaveIntervalMs,
@@ -1809,6 +1811,10 @@ export function Toolbar() {
         setViewMode("graph");
         requestFitView();
         break;
+      case "canvas.declutter":
+        setViewMode("graph");
+        requestDeclutter();
+        break;
       case "history.undo":
         undo();
         break;
@@ -2192,6 +2198,11 @@ export function Toolbar() {
                 <div className="ps-command-menu-separator" />
                 <button role="menuitem" onClick={() => executeCommand("canvas.fitView")}>
                   Fit model to view
+                </button>
+                <button role="menuitem"
+                  disabled={doc.nodes.length === 0}
+                  onClick={() => executeCommand("canvas.declutter")}>
+                  Declutter diagram
                 </button>
                 <div className="ps-command-menu-label">Auto-save interval</div>
                 {AUTOSAVE_INTERVAL_OPTIONS.map((intervalMs) => (

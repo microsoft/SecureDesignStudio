@@ -671,6 +671,33 @@ body {
 }
 
 /* ---------- Sequence-diagram view ---------- */
+.ps-canvas-layout-status {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(370px, calc(100vw - 24px));
+  border: 1px solid var(--ps-border);
+  border-radius: 6px;
+  background: var(--ps-surface, white);
+  color: var(--ps-text, #242424);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 2px 6px #0002;
+}
+.ps-edge-label.ps-edge-label-compact {
+  box-sizing: border-box;
+  width: 240px;
+  height: 32px;
+  white-space: nowrap;
+}
+.ps-edge-label-compact > :not(.ps-edge-num, .ps-edge-label-content, .ps-edge-compact-attention, .ps-edge-title-input) { display: none; }
+.ps-edge-label-compact .ps-edge-title-input { flex: 1; min-width: 0; max-height: 26px; }
+.ps-edge-label-compact .ps-edge-label-content { flex: 1; overflow: hidden; }
+.ps-edge-label-compact .ps-edge-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-edge-compact-attention { color: var(--ps-text, #242424); font-weight: 800; }
+.ps-edge-label-compact:focus-visible { outline: 2px solid var(--ps-accent); outline-offset: 2px; }
 .ps-seq-wrap {
   position: absolute;
   inset: 0;
@@ -3610,6 +3637,12 @@ body.ps-resizing-h * {
   padding-inline: 7px;
   font-size: 11px;
   font-weight: 600;
+}
+.ps-canvas-zoom-controls .ps-canvas-declutter {
+  width: 76px;
+  padding-inline: 4px;
+  font-size: 11px;
+  line-height: 14px;
 }
 .ps-canvas-zoom-separator {
   width: 1px;

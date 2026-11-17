@@ -1362,6 +1362,30 @@ models take precedence when reopened. See
 | Finish / cancel inline node or edge title edit | Ctrl+Enter / Escape after double-clicking the title |
 | Navigate menu items / inspector tabs | Arrow keys, Home, End; Enter activates a menu command, Escape closes the top temporary surface |
 
+**Declutter** (beside the bottom-left Diagram zoom controls, or **View > Declutter diagram**) arranges
+the current visible scenario/filter into flow-based columns and separates
+individual flow labels, including parallel, reverse and self flows. Compact
+labels retain their sequence numbers and titles; hover for the full summary,
+or select a label (Enter/Space with keyboard focus) to open its Properties.
+An **!** cue indicates active discussion/findings, a marked problem, or missing
+or unresolved communication information; inspect the flow for details.
+
+The arranged positions, editable flow waypoints and compact labels become part
+of the model. Continue dragging, resizing, connecting and editing immediately;
+there is no Restore mode. **Undo** restores the whole previous layout in one
+step, and **Redo** reapplies it. Native `.tma` saves, autosave recovery, standalone
+HTML and collaboration retain the layout; PNG exports capture the displayed
+diagram. Connections, numbering, metadata, memberships and review records are
+unchanged. Node and edge geometry is shared across scenarios, so shared objects
+also move in their other scenarios. Changing scenarios or filters never reruns
+Declutter automatically; click it again to arrange the newly visible subset.
+
+Nested boundaries stay grouped, and shared boundaries still contain hidden
+members. For overlapping boundary memberships, an explicit notice explains that
+authored positions are retained and only labels are separated; flow crossings
+can remain. Older SDS versions may display expanded labels instead of the saved
+compact presentation. Declutter runs in the browser without AI or network requests.
+
 Bottom-left Diagram controls provide zoom/fit. Settings has theme and autosave
 interval. See [model concepts](#1-what-securedesignstudio-is),
 [Authentication Library](authentication-library.md), and

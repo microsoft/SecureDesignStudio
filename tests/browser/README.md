@@ -155,6 +155,17 @@ and members together, contained nodes/flows remain reachable, title editing and
 resize handles still work, nested borders remain reachable, and Undo/Redo
 restores exact document state.
 
+Declutter contracts exercise dense parallel and self flows, zero rendered
+label/node overlaps, individual sequence labels, keyboard Properties access,
+single-step Undo/Redo, native save/open, autosave recovery and immediate dragging
+without automatic relayout. They also cover banner-free bottom-left controls at
+320px, filters, Diagram/Sequence switching and boundary/annotation editing.
+Pure `declutter-layout.test.mjs` cases
+cover deterministic routing, cycles, nested/equal boundary containment, the
+explicit geometry-preserving overlapping-boundary fallback, filtered endpoints,
+saved native waypoints, strict label settings and synthetic collaboration/reconnect.
+These synthetic checks are not participant-usability evidence.
+
 ### Prompt-to-diagram authoring
 
 `tests/authentication/threat-model-designer.test.mjs` exercises the strict

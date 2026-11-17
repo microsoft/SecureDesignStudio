@@ -33,6 +33,9 @@ interface UiPreferences {
 }
 
 interface UiShellApi extends UiPreferences {
+  declutterRequested: boolean;
+  requestDeclutter: () => void;
+  finishDeclutterRequest: () => void;
   inspectorPresentation: InspectorPresentation;
   setInspectorPresentation: (presentation: InspectorPresentation) => void;
   inspectorHostRef: MutableRefObject<HTMLElement | null>;
@@ -146,6 +149,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
     "secure-design-studio-diagram.tma",
   );
   const [fitViewRequest, setFitViewRequest] = useState(0);
+  const [declutterRequested, setDeclutterRequested] = useState(false);
   const [reopenFocusRequest, setReopenFocusRequest] = useState(0);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
@@ -187,6 +191,9 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
     };
     return {
       ...preferences,
+      declutterRequested,
+      requestDeclutter: () => setDeclutterRequested(true),
+      finishDeclutterRequest: () => setDeclutterRequested(false),
       inspectorPresentation,
       setInspectorPresentation,
       inspectorHostRef,
@@ -252,7 +259,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       requestFitView: () => setFitViewRequest((current) => current + 1),
       reopenFocusRequest,
     };
-  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation]);
+  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation, declutterRequested]);
 
   return (
     <UiShellContext.Provider value={value}>{children}</UiShellContext.Provider>

@@ -4,7 +4,7 @@
 // Conventions:
 //  - Entities are matched by id across versions. There is no fuzzy matching.
 //  - Strictly positional fields (node.position, edge.waypoints, boundary
-//    position/size) are intentionally ignored.
+//    position/size), including compact edge-label presentation, are intentionally ignored.
 //  - When a parent entity is wholesale added/removed (a scenario, node, or
 //    edge), child-level changes that fall under it are suppressed to keep
 //    the change list signal-heavy.

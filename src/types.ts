@@ -903,6 +903,8 @@ export interface PsEdge {
   // without changing any analysis rules. Undefined or false means the
   // edge uses the default color.
   problem?: boolean;
+  // Persisted label presentation; geometry remains editable via waypoints.
+  compactLabel?: boolean;
   // Note: data attachments are per-scenario and per-direction
   // (request vs. response). See Scenario.edgeRequestData /
   // Scenario.edgeResponseData.

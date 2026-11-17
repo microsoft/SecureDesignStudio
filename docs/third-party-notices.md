@@ -21,6 +21,10 @@ Other texts are retained from their locked installed packages. Component
 licenses are MIT, ISC, BSD-3-Clause, Apache-2.0 or 0BSD; they are not all
 relicensed to MIT by the project's license.
 
+The browser-only Declutter view uses `@dagrejs/dagre` and its
+`@dagrejs/graphlib` dependency under MIT. Their locked versions, provenance
+and complete notices are included in the runtime notice record above.
+
 ## Embedded Visio template
 
 SecureDesignStudio embeds `vsdx/media/media.vsdx` from the
