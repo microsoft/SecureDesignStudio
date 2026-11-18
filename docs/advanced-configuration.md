@@ -131,12 +131,17 @@ Browser and API authoring share `shared/designContract.ts`. Keep shared runtime
 code outside `api/`: Vite serves source modules by path, while credential-free
 browser checks deliberately block every `/api/` request, including source files.
 The API compiler uses the repository root for its source layout and emits
-`api/dist/api/{collab-token,design-assistant}/index.js` plus
-`api/dist/shared/designContract.js`. Both `function.json` entrypoints and the API
+`api/dist/api/{collab-token,design-assistant,ado-work-items}/index.js` plus
+the shared contracts in `api/dist/shared/`. Each `function.json` and the API
 package's `main` point into that compiled tree. Build with
 `npm --prefix api run build` from the full checkout before packaging `api/`;
 the compiled shared module stays inside that deployable folder, and HTTP routes
 are unchanged. The same layout applies to the API watch command.
+
+The ADO function explicitly selects `entryPoint: "default"`: its module also
+exports the opt-in loopback Vite adapter, so Functions cannot infer a unique
+handler. Keep that adapter separate from the deployed HTTP entry point;
+selecting it would bypass the deployed relay's enablement check.
 
 `shared/aiDesignGuidance.ts` supplies the guidance validator, fixed trusted
 reference-data policy and request-size budgets to both browser and API.
