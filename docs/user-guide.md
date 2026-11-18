@@ -32,6 +32,17 @@ Nodes, edges, and boundaries are shared across scenarios. Renaming a shared
 node changes it everywhere; changing a scenario's flow order does not.
 Selecting a scenario hides objects outside its membership.
 
+Use **Declutter**, beside the bottom-left zoom controls, to arrange the visible
+nodes, boundaries, annotations and flows with space for their full labels.
+The result is saved geometry: continue dragging or editing immediately, save
+normally, or use one ordinary **Undo** to restore the previous layout.
+Shared objects use the same geometry in every scenario; hidden objects stay
+in place, although a shared boundary may expand to contain its moved members.
+Use Show all to arrange the whole model. Crossing (neither disjoint nor nested)
+boundary memberships cannot be arranged automatically; Declutter reports this
+without changing the document. Dense models can still need manual routing and
+zooming to inspect individual flows.
+
 **This is modeling metadata, not resource configuration or certification.**
 Authentication describes flows, not app sign-in. Boundaries do not enforce
 isolation; a clean analysis does not prove real services secure or compliant.

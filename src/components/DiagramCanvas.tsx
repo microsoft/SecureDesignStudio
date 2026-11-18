@@ -13,6 +13,7 @@ import {
   type NodeChange,
   type EdgeChange,
   applyNodeChanges,
+  getViewportForBounds,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,8 +53,12 @@ const edgeTypes = {
 
 const UNRANKED_CLASSIFICATION_STYLE = { color: "#475569", foreground: "#ffffff" };
 
-function CanvasZoomControls() {
-  const { zoomIn, zoomOut, setViewport, fitView } = useReactFlow();
+const MIN_CANVAS_ZOOM = 0.05;
+
+function CanvasZoomControls({ onFit, onDeclutter, canDeclutter }: {
+  onFit: () => void; onDeclutter: () => void; canDeclutter: boolean;
+}) {
+  const { zoomIn, zoomOut, setViewport } = useReactFlow();
   const { x, y, zoom } = useViewport();
   const percentage = Math.round(zoom * 100);
 
@@ -67,7 +72,7 @@ function CanvasZoomControls() {
         type="button"
         aria-label="Zoom out"
         title="Zoom out"
-        disabled={zoom <= 0.5}
+        disabled={zoom <= MIN_CANVAS_ZOOM}
         onClick={() => void zoomOut({ duration: 150 })}
       >
         −
@@ -95,9 +100,20 @@ function CanvasZoomControls() {
         type="button"
         aria-label="Fit model to view"
         title="Fit model to view"
-        onClick={() => void fitView({ duration: 300, padding: 0.18 })}
+        onClick={onFit}
       >
         ⊡
+      </button>
+      <span className="ps-canvas-zoom-separator" aria-hidden="true" />
+      <button
+        type="button"
+        className="ps-canvas-declutter"
+        aria-label="Declutter diagram"
+        title="Arrange visible items and flows. Shared geometry changes in every scenario. Undo restores the previous layout."
+        disabled={!canDeclutter}
+        onClick={onDeclutter}
+      >
+        Declutter
       </button>
     </div>
   );
@@ -122,6 +138,7 @@ function InnerDiagram() {
     visibleEdges,
     setNodeSize,
     moveDiagramItems,
+    declutterDiagram,
     resizeBoundary,
     finishBoundaryResize,
     createNode,
@@ -157,8 +174,65 @@ function InnerDiagram() {
     zoomOut,
     getViewport,
     setViewport,
+    getNodes,
+    getNodesBounds,
   } = useReactFlow();
   const { fitViewRequest, openInspector } = useUiShell();
+  const [declutterError, setDeclutterError] = useState<string | null>(null);
+  const [declutterFitRequest, setDeclutterFitRequest] = useState(0);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const fitDiagram = useCallback(() => {
+    const canvas = canvasRef.current?.querySelector(".react-flow");
+    const nodes = getNodes();
+    if (!canvas || !nodes.length) return;
+    const bounds = getNodesBounds(nodes);
+    let left = bounds.x, top = bounds.y, right = bounds.x + bounds.width, bottom = bounds.y + bounds.height;
+    canvas.querySelectorAll<HTMLElement>(".ps-edge-label").forEach(label => {
+      const rect = label.getBoundingClientRect();
+      const a = screenToFlowPosition({ x: rect.left, y: rect.top });
+      const b = screenToFlowPosition({ x: rect.right, y: rect.bottom });
+      left = Math.min(left, a.x); top = Math.min(top, a.y);
+      right = Math.max(right, b.x); bottom = Math.max(bottom, b.y);
+    });
+    void setViewport(getViewportForBounds(
+      { x: left, y: top, width: right - left, height: bottom - top },
+      canvas.clientWidth, canvas.clientHeight, MIN_CANVAS_ZOOM, 1, 0.18,
+    ), { duration: 300 });
+  }, [getNodes, getNodesBounds, screenToFlowPosition, setViewport]);
+
+  const onDeclutter = useCallback(() => {
+    setDeclutterError(null);
+    try {
+      const measured = new Map(getNodes().map(node => [node.id, node.measured]));
+      const labels = new Map(Array.from(canvasRef.current?.querySelectorAll<HTMLElement>(".ps-edge-label") ?? [])
+        .map(label => [label.dataset.edgeId, { width: label.offsetWidth, height: label.offsetHeight }]));
+      declutterDiagram({
+        nodes: visibleNodes.map(node => {
+          const size = measured.get(node.id);
+          return { id: node.id, size: size?.width && size.height
+            ? { width: size.width, height: size.height } : node.size };
+        }),
+        edges: visibleEdges.map(edge => {
+          const labelSize = labels.get(edge.id);
+          if (!labelSize?.width || !labelSize.height) {
+            throw new Error("Wait for the diagram to finish rendering, then try Declutter again.");
+          }
+          return { id: edge.id, source: edge.source, target: edge.target, labelSize };
+        }),
+        boundaries: visibleBoundaries,
+        annotations: visibleTextAnnotations,
+      });
+      setDeclutterFitRequest(value => value + 1);
+    } catch (error) {
+      setDeclutterError(error instanceof Error ? error.message : String(error));
+    }
+  }, [declutterDiagram, getNodes, visibleNodes, visibleEdges, visibleBoundaries, visibleTextAnnotations]);
+
+  useEffect(() => {
+    if (!declutterFitRequest) return;
+    const frame = requestAnimationFrame(fitDiagram);
+    return () => cancelAnimationFrame(frame);
+  }, [declutterFitRequest, fitDiagram]);
 
   // ---- Right-click context menu state ---- (hoisted above rfEdges so the
   // edge-title callback can be embedded in edge data.)
@@ -254,10 +328,10 @@ function InnerDiagram() {
   useEffect(() => {
     if (fitViewRequest === 0) return;
     const raf = requestAnimationFrame(() => {
-      void fitView({ duration: 300, padding: 0.18 });
+      fitDiagram();
     });
     return () => cancelAnimationFrame(raf);
-  }, [fitViewRequest, fitView]);
+  }, [fitViewRequest, fitDiagram]);
 
   useEffect(() => {
     if (
@@ -963,14 +1037,14 @@ function InnerDiagram() {
         );
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        void fitView({ duration: 300, padding: 0.18 });
+        fitDiagram();
       }
     },
-    [fitView, getViewport, setViewport, zoomIn, zoomOut],
+    [fitDiagram, getViewport, setViewport, zoomIn, zoomOut],
   );
 
   return (
-    <>
+    <div ref={canvasRef} className="ps-diagram-surface">
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -998,13 +1072,22 @@ function InnerDiagram() {
         // the invisible hit area outside the handle without changing visuals.
         reconnectRadius={30}
         fitView
+        minZoom={MIN_CANVAS_ZOOM}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={16} />
         {/* Default minimap is 200×150; halved to take up less room. */}
         <MiniMap pannable zoomable style={{ width: 100, height: 75 }} />
-        <CanvasZoomControls />
+        <CanvasZoomControls
+          onFit={fitDiagram}
+          onDeclutter={onDeclutter}
+          canDeclutter={visibleNodes.length + visibleBoundaries.length + visibleTextAnnotations.length > 0}
+        />
       </ReactFlow>
+      {declutterError && <div className="ps-declutter-error" role="alert">
+        {declutterError}
+        <button type="button" onClick={() => setDeclutterError(null)}>Dismiss</button>
+      </div>}
       {contextMenu && (
         <div
           className="ps-context-menu"
@@ -1287,7 +1370,7 @@ function InnerDiagram() {
           onClose={() => setCommentsTarget(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 

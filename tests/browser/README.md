@@ -70,6 +70,14 @@ including failed cases, as seven-day workflow artifacts.
 
 ## What is actually covered
 
+Declutter contracts exercise measured full-label spacing, visible-scenario
+scope, saved geometry, unchanged model meaning, immediate pointer dragging,
+separate drag/layout Undo, Redo, native save/open and autosave reload. They
+also cover stable view switches, no-op history, 320px keyboard access and
+explicit unchanged-state failure for crossing boundary memberships. These
+synthetic checks do not establish readability of a real model or participant
+usability; inspect the supplied diagram separately.
+
 PNG-export contracts compare a rendered node against the downloaded image in
 both themes, including its icon, multiline title and actual dimensions. They
 sample curved flow geometry and arrowhead fill, check opaque background/grid
