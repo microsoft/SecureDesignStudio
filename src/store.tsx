@@ -1,6 +1,7 @@
 import { SERVICES } from "./services";
 import { normalizeWorkItem } from "./workItems";
 import { normalizeTextAnnotations, normalizeTextAnnotationIds } from "./textAnnotations";
+import { declutterDocument, type DeclutterInput } from "./declutterLayout";
 import type { PsTextAnnotation } from "./types";
 import { normalizeDfdValue, normalizeNodeScope, resolveNodeReviewScope } from "./dfdSemantics";
 import {
@@ -691,6 +692,8 @@ interface StoreApi {
     }>,
     finished: boolean,
   ) => void;
+
+  declutterDiagram: (input: DeclutterInput) => void;
 
   // Edges
   createEdge: (
@@ -2051,6 +2054,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const declutterDiagram = useCallback((input: DeclutterInput) => {
+    const current = docRef.current;
+    const next = declutterDocument(current, input);
+    if (next === current) return;
+    snapshot();
+    setDoc(next);
+    setSelection(null);
+  }, [setDoc, snapshot, setSelection]);
 
   const deleteNode = useCallback((id: string) => {
     snapshot();
@@ -4673,6 +4685,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     finishNodeMove,
     setNodeSize,
     moveDiagramItems,
+    declutterDiagram,
     createEdge,
     updateEdge,
     deleteEdge,

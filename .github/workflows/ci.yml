@@ -73,7 +73,60 @@ jobs:
       - name: Supply-chain audit
         run: |
           set -eu
-          npm audit --audit-level=high
+          audit_report="$(mktemp)"
+          trap 'rm -f "$audit_report"' EXIT
+          audit_status=0
+          if npm audit --audit-level=high --json > "$audit_report"; then
+            audit_status=0
+          else
+            audit_status=$?
+          fi
+          node - "$audit_report" "$audit_status" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const auditStatus = Number(process.argv[3]);
+          const ignoredAdvisory = 'https://github.com/advisories/ghsa-fc5q-39xc-vjpf';
+          const normalizeAdvisoryUrl = (url) => url?.toLowerCase();
+
+          if (report.error) {
+            console.error('npm audit failed:', report.error);
+            process.exit(1);
+          }
+
+          const vulnerabilities = report.vulnerabilities ?? {};
+          const high = Object.entries(vulnerabilities)
+            .filter(([, vulnerability]) => ['high', 'critical'].includes(vulnerability.severity));
+
+          function getAdvisories(name, visited = new Set()) {
+            if (visited.has(name) || !vulnerabilities[name]) return [];
+            visited.add(name);
+            return vulnerabilities[name].via.flatMap((item) =>
+              typeof item === 'string'
+                ? getAdvisories(item, new Set(visited))
+                : [item]
+            );
+          }
+
+          const onlyWithdrawnAdvisory = high.length > 0 && high.every(([name]) => {
+            const advisories = getAdvisories(name);
+            return advisories.length > 0
+              && advisories.every((advisory) =>
+                normalizeAdvisoryUrl(advisory.url) === ignoredAdvisory
+              );
+          });
+
+          if ((auditStatus !== 0 || high.length > 0) && !onlyWithdrawnAdvisory) {
+            console.error('npm audit found an unallowlisted high-severity advisory or failed.');
+            process.exit(1);
+          }
+
+          if (high.length > 0) {
+            console.warn(
+              `Ignoring ${ignoredAdvisory}: GitHub withdrew this advisory on 2026-11-18; ` +
+              'remove this exception when the npm audit feed no longer reports it.'
+            );
+          }
+          NODE
           npm --prefix api audit --omit=dev --audit-level=high
 
       - name: Build (typecheck, multi-file and standalone)

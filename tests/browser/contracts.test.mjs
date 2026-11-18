@@ -70,6 +70,137 @@ registerDesignerContracts({ getHarness: () => harness });
 registerAiGuidanceContracts({ getHarness: () => harness, exportModel });
 registerFirstRunContracts({ getHarness: () => harness });
 
+const declutterMeaning = doc => ({
+  ...doc,
+  nodes: doc.nodes.map(({ position, ...rest }) => rest),
+  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, ...rest }) => rest),
+  boundaries: doc.boundaries.map(({ position, size, ...rest }) => rest),
+  ...(doc.textAnnotations ? { textAnnotations: doc.textAnnotations.map(({ position, ...rest }) => rest) } : {}),
+});
+
+async function savedDiagram(page) {
+  return page.evaluate(key => {
+    window.dispatchEvent(new Event("pagehide"));
+    return JSON.parse(localStorage.getItem(key));
+  }, autosaveKey);
+}
+
+async function waitForMeasuredDiagram(page) {
+  await until(() => page.evaluate(key => {
+    window.dispatchEvent(new Event("pagehide"));
+    const saved = JSON.parse(localStorage.getItem(key));
+    return saved && [...document.querySelectorAll(".react-flow__node-process")].every(element => {
+      const node = saved.doc.nodes.find(node => node.id === element.dataset.id);
+      return node?.size?.width === element.offsetWidth && node?.size?.height === element.offsetHeight;
+    });
+  }, autosaveKey), "rendered node sizes saved");
+}
+
+test("regression: Declutter saves visible geometry with full labels, immediate dragging and one ordinary Undo", async () => {
+  await harness.run("regression: saved editable Declutter", async ({ page, observations }) => {
+    await scenario(page).selectOption("");
+    await waitForMeasuredDiagram(page);
+    await scenario(page).selectOption("s_primary");
+    await waitForMeasuredDiagram(page);
+    const before = await savedDiagram(page);
+    const button = page.getByRole("button", { name: "Declutter diagram", exact: true });
+    await button.click();
+    await until(async () => (await savedDiagram(page)).past.length === before.past.length + 1, "one Declutter snapshot");
+    const after = await savedDiagram(page);
+    assert.deepEqual(after.past.at(-1), before.doc);
+    assert.deepEqual(declutterMeaning(after.doc), declutterMeaning(before.doc));
+    assert.notDeepEqual(after.doc.nodes.slice(0, 2).map(node => node.position), before.doc.nodes.slice(0, 2).map(node => node.position));
+    assert.deepEqual(after.doc.nodes[2], before.doc.nodes[2], "hidden node unchanged");
+    assert.deepEqual(after.doc.edges[2], before.doc.edges[2], "hidden flow unchanged");
+    assert.equal(await page.getByRole("button", { name: /Restore.*layout/i }).count(), 0);
+    assert.equal(await page.getByRole("alert").count(), 0, "no persistent success banner");
+    const geometry = await page.evaluate(() => {
+      const items = [...document.querySelectorAll(".react-flow__node-process, .ps-edge-label")].map(element => {
+        const r = element.getBoundingClientRect();
+        return { x: r.x, y: r.y, right: r.right, bottom: r.bottom };
+      });
+      return items.every((a, i) => items.slice(i + 1).every(b =>
+        a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y));
+    });
+    assert.ok(geometry, "actual full labels and nodes do not overlap");
+    assert.equal(await page.locator('.ps-edge-label[data-edge-id="e_request"] .ps-edge-title').textContent(), "Request payload");
+    await button.click();
+    assert.deepEqual((await savedDiagram(page)).doc, after.doc, "repeated layout is stable");
+    assert.equal((await savedDiagram(page)).past.length, after.past.length, "no-op does not add history");
+
+    await page.getByRole("button", { name: /^Reset canvas zoom to 100%/ }).click();
+    await until(() => page.locator(".react-flow__viewport").evaluate(element =>
+      Math.abs(new DOMMatrix(getComputedStyle(element).transform).a - 1) < 0.0001), "100% zoom for dragging");
+    const client = node(page, "n_client");
+    const box = await client.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 35, box.y + box.height / 2 + 25, { steps: 5 });
+    await page.mouse.up();
+    await until(async () => JSON.stringify((await savedDiagram(page)).doc.nodes[0].position) !==
+      JSON.stringify(after.doc.nodes[0].position), "node immediately draggable");
+    const moved = await savedDiagram(page);
+    assert.equal(moved.past.length, after.past.length + 1, "drag has its own history entry");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await savedDiagram(page)).doc, after.doc, "Undo drag only");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await savedDiagram(page)).doc, before.doc, "Undo Declutter restores exact model");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.deepEqual((await savedDiagram(page)).doc, after.doc);
+
+    const exported = await exportModel(page);
+    assert.deepEqual(exported.doc, after.doc, "native Save retains geometry");
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "declutter-reopened.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(exported)),
+    });
+    await until(() => page.getByLabel("Document status").getByText("declutter-reopened.tma", { exact: true }).count(), "native reopen");
+    assert.deepEqual((await savedDiagram(page)).doc, after.doc);
+    await page.reload();
+    await waitForMeasuredDiagram(page);
+    assert.deepEqual((await savedDiagram(page)).doc, after.doc, "autosave reload retains layout");
+    const stable = (await savedDiagram(page)).doc;
+    await scenario(page).selectOption("s_archive");
+    await scenario(page).selectOption("");
+    await scenario(page).selectOption("s_primary");
+    assert.deepEqual((await savedDiagram(page)).doc, stable, "view switches do not relayout");
+    observations.outcome = "Saved full-label geometry, semantic equality, independent dragging/Undo, native and autosave round trips.";
+  });
+});
+
+test("usability: Declutter stays beside zoom controls at 320px and reports unsupported boundaries without mutation", async () => {
+  await harness.run("usability: Declutter control and fail-closed boundaries", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    const button = page.getByRole("button", { name: "Declutter diagram", exact: true });
+    const group = page.getByRole("group", { name: "Canvas zoom controls", exact: true });
+    assert.equal(await group.getByRole("button").last().getAttribute("aria-label"), "Declutter diagram");
+    const bounds = await button.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320, "control stays inside viewport");
+    await waitForMeasuredDiagram(page);
+    const before = await savedDiagram(page);
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await until(async () => (await savedDiagram(page)).past.length === before.past.length + 1, "keyboard Declutter");
+    assert.ok(await button.evaluate(element => element === document.activeElement), "focus stays on Declutter");
+
+    const model = modelFixture();
+    model.doc.boundaries = [["n_client", "n_api"], ["n_api", "n_archive"]].map((nodeIds, i) => ({
+      id: `b_crossing_${i}`, nodeIds, title: "Crossing membership", type: "security",
+      position: { x: 0, y: 0 }, size: { width: 1100, height: 400 },
+    }));
+    model.doc.scenarios[0].nodeIds.push("n_archive");
+    model.doc.scenarios[0].boundaryIds = model.doc.boundaries.map(boundary => boundary.id);
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "crossing.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
+    });
+    await waitForMeasuredDiagram(page);
+    const unchanged = await savedDiagram(page);
+    await button.click();
+    await page.getByRole("alert").getByText(/Overlapping memberships were left unchanged/).waitFor();
+    assert.deepEqual((await savedDiagram(page)).doc, unchanged.doc);
+    assert.deepEqual((await savedDiagram(page)).past, unchanged.past);
+  });
+});
+
 for (const theme of ["light", "dark"]) {
   test(`regression: PNG export preserves rendered nodes, curved flows and labels (${theme})`, async () => {
     await harness.run(`regression: PNG canvas fidelity (${theme})`, async ({ page, observations }) => {

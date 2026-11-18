@@ -3563,6 +3563,30 @@ body.ps-resizing-h * {
 }
 
 /* ---------- React Flow tweaks ---------- */
+.ps-diagram-surface {
+  position: absolute;
+  inset: 0;
+}
+.ps-declutter-error {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 12;
+  padding: 8px;
+  background: var(--ps-surface);
+  color: var(--ps-text);
+  border: 1px solid var(--ps-border);
+  border-radius: 6px;
+}
+.ps-declutter-error button {
+  margin-left: 8px;
+}
+.ps-canvas-zoom-controls .ps-canvas-declutter {
+  width: auto;
+  padding-inline: 8px;
+  font-size: 12px;
+}
 .ps-canvas-zoom-controls {
   position: absolute;
   left: max(12px, env(safe-area-inset-left));
