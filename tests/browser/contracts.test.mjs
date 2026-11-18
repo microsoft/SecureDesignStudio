@@ -192,6 +192,11 @@ test("usability: Declutter stays beside zoom controls at 320px and reports unsup
     await page.locator("#ps-file-open-input").setInputFiles({
       name: "crossing.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
     });
+    await until(async () => {
+      const imported = await savedDiagram(page);
+      return imported.doc.boundaries.some(boundary => boundary.id === "b_crossing_0") &&
+        imported.doc.scenarios[0].nodeIds.includes("n_archive");
+    }, "crossing fixture import");
     await waitForMeasuredDiagram(page);
     const unchanged = await savedDiagram(page);
     await button.click();
@@ -331,7 +336,7 @@ for (const theme of ["light", "dark"]) {
           gridDots.push(dots);
         }
         return { difference: different / (expected.width * expected.height),
-          curveHits: geometry.curve.map(point => hasRed(point, 2)), arrow: hasRed(geometry.arrow, 0),
+          curveHits: geometry.curve.map(point => hasRed(point, 2)), arrow: hasRed(geometry.arrow, 2),
           background: Array.from(background), gridDots,
           width: output.width, height: output.height };
       }, { exported: `data:image/png;base64,${png.toString("base64")}`,
