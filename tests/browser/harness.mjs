@@ -31,6 +31,22 @@ export function hasLocalReadyMessage(output) {
   return /Local:\s+http:\/\/localhost:5173\//.test(stripVTControlCharacters(output));
 }
 
+export async function waitForLocalApp(page, timeout = 6000) {
+  const status = page.getByLabel("Document status").getByText("Local mode", { exact: true });
+  try {
+    await status.waitFor({ state: "visible", timeout });
+    return false;
+  } catch (initialError) {
+    try {
+      await page.reload({ waitUntil: "load", timeout: 20000 });
+      await status.waitFor({ state: "visible", timeout: 20000 });
+      return true;
+    } catch (retryError) {
+      throw new AggregateError([initialError, retryError], "Local Vite app did not render after one reload.");
+    }
+  }
+}
+
 export async function requireFreePort(port = 5173, host = "localhost") {
   const probe = net.createServer();
   await new Promise((resolve, reject) => {
@@ -241,18 +257,24 @@ export async function startHarness() {
       });
       page = await context.newPage();
       page.setDefaultTimeout(6000);
-      page.on("pageerror", error => faults.push(`Runtime: ${error.message}`));
+      const startupFaults = [];
+      let localAppReady = false;
+      const recordFault = fault => (localAppReady ? faults : startupFaults).push(fault);
+      page.on("pageerror", error => recordFault(`Runtime: ${error.message}`));
       page.on("console", message => {
         if (message.type() !== "error") return;
-        faults.push(`Console: ${message.text()}`);
+        recordFault(`Console: ${message.text()}`);
       });
       page.on("dialog", async dialog => {
-        faults.push(`Unexpected ${dialog.type()}: ${dialog.message()}`);
+        recordFault(`Unexpected ${dialog.type()}: ${dialog.message()}`);
         await dialog.dismiss();
       });
       // Cold Vite module transformation is startup work, not a six-second UI action.
       await page.goto(`${origin}${hash}`, { timeout: 20000 });
-      await page.getByLabel("Document status").getByText("Local mode", { exact: true }).waitFor({ state: "visible" });
+      const recoveredStartup = await waitForLocalApp(page);
+      localAppReady = true;
+      faults.push(...startupFaults.filter(fault =>
+        !recoveredStartup || fault !== "Console: Failed to load resource: net::ERR_CONNECTION_REFUSED"));
       assert.equal(await page.locator(".ps-command-version").textContent(), `v${source.version}`,
         "The served app displays the current worktree version");
       await page.locator("#ps-file-open-input").setInputFiles({

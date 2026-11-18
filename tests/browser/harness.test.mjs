@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import net from "node:net";
 import { test } from "node:test";
-import { allowsRequest, hasLocalReadyMessage, requireFreePort, runRecordedCase, summarizeOutcome } from "./harness.mjs";
+import {
+  allowsRequest, hasLocalReadyMessage, requireFreePort, runRecordedCase, summarizeOutcome, waitForLocalApp,
+} from "./harness.mjs";
 
 test("failed context setup is registered and cannot produce passing evidence", async () => {
   const results = [];
@@ -102,6 +104,38 @@ test("readiness requires the owned server's exact address and tolerates ANSI for
   assert.equal(hasLocalReadyMessage("Local: http://localhost:\u001b[1m5173\u001b[22m/"), true);
   assert.equal(hasLocalReadyMessage("Local: http://localhost:5174/"), false);
   assert.equal(hasLocalReadyMessage("Error requesting http://localhost:5173/"), false);
+});
+
+test("local app readiness retries once after a failed initial render", async () => {
+  const makePage = (waits, onReload = () => {}) => {
+    let wait = 0;
+    return {
+      getByLabel: () => ({ getByText: () => ({
+        waitFor: async () => {
+          const result = waits[wait++];
+          if (result instanceof Error) throw result;
+        },
+      }) }),
+      reload: async options => {
+        onReload(options);
+      },
+    };
+  };
+  const initialFailure = new Error("Initial render timeout");
+  assert.equal(await waitForLocalApp(makePage([undefined])), false);
+  let reloads = 0;
+  assert.equal(await waitForLocalApp(makePage(
+    [initialFailure, undefined],
+    options => {
+      reloads++;
+      assert.deepEqual(options, { waitUntil: "load", timeout: 20000 });
+    },
+  )), true);
+  assert.equal(reloads, 1);
+  await assert.rejects(
+    waitForLocalApp(makePage([initialFailure, new Error("Retry render timeout")])),
+    error => error instanceof AggregateError && error.errors.length === 2,
+  );
 });
 
 test("HTTP and WebSocket policy permits only the exact local origin and no API routes", () => {
