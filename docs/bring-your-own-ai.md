@@ -123,6 +123,10 @@ separate host-storage health issue: the generated local settings use an empty
 storage value for the HTTP-only AI workflow. Successful AI invocations do not
 prove that host storage is healthy. Do not add cloud storage credentials or
 disable health checks merely to hide this message.
+For a healthy storage-dependent local host, separately configure approved
+development storage or a running local Azurite emulator. Setting
+`UseDevelopmentStorage=true` without starting Azurite is not sufficient.
+Storage configuration does not resolve an ambiguous function entry point.
 
 Designer preserves strict validation for unknown or incomplete flow orders.
 One recoverable case is an empty `edgeOrder` array accompanying otherwise valid

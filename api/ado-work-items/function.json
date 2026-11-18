@@ -14,5 +14,6 @@
       "name": "res"
     }
   ],
-  "scriptFile": "../dist/api/ado-work-items/index.js"
+  "scriptFile": "../dist/api/ado-work-items/index.js",
+  "entryPoint": "default"
 }

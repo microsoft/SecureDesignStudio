@@ -9,6 +9,7 @@ const compile = path => ts.transpileModule(readFileSync(new URL(path, import.met
 const contract = {};
 new Function("exports", compile("../../shared/adoContract.ts"))(contract);
 const compiled = compile("../../api/ado-work-items/index.ts");
+const binding = JSON.parse(readFileSync(new URL("../../api/ado-work-items/function.json", import.meta.url)));
 const configuration = changes => ({
   organizationUrl: "https://dev.azure.com/synthetic",
   project: "Synthetic Project",
@@ -63,7 +64,9 @@ function harness(options = {}) {
     calls, logs,
     async run(req = request()) {
       const context = { log: (...args) => logs.push(args) };
-      await (options.local ? exports.localAdoWorkItems : exports.default)(context, req);
+      const handler = options.local ? exports.localAdoWorkItems : exports[binding.entryPoint];
+      assert.equal(typeof handler, "function", "The Functions binding resolves the compiled deployed handler");
+      await handler(context, req);
       assert.equal(context.res.headers["Cache-Control"], "no-store");
       assert.equal(context.res.headers.Pragma, "no-cache");
       assert.equal(context.res.headers["Content-Type"], "application/json");
@@ -76,7 +79,7 @@ function harness(options = {}) {
   };
 }
 
-test("ADO relay is unavailable by default and binds only the explicit POST route", async () => {
+test("ADO Functions binding resolves the deployed handler, stays unavailable by default and exposes only POST", async () => {
   for (const enabled of [null, "", "0", "true"]) {
     const h = harness({ enabled });
     const result = await h.run();
@@ -84,7 +87,6 @@ test("ADO relay is unavailable by default and binds only the explicit POST route
     assert.match(result.body.error, /unavailable.*explicitly enable/i);
     assert.equal(h.calls.length, 0);
   }
-  const binding = JSON.parse(readFileSync(new URL("../../api/ado-work-items/function.json", import.meta.url)));
   assert.deepEqual(binding.bindings[0].methods, ["post"]);
   assert.equal(binding.bindings[0].route, "ado-work-items");
   assert.equal(binding.scriptFile, "../dist/api/ado-work-items/index.js");
