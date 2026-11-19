@@ -25,8 +25,8 @@ export function ChangeRow({
 }: {
   change: ChangeItem;
   selected: boolean;
-  onNavigate: (change: ChangeItem) => void;
-  onOpenProperties: (change: ChangeItem) => void;
+  onNavigate: (change: ChangeItem, trigger: HTMLButtonElement, continueVisit: boolean) => void;
+  onOpenProperties: (change: ChangeItem, trigger: HTMLButtonElement) => void;
 }) {
   const { doc } = useStore();
   // Re-check navigability at render time. The diff was computed against the
@@ -111,13 +111,13 @@ export function ChangeRow({
   );
 
   return (
-    <div className={className}>
+    <div className={className} data-review-kind="change" data-review-id={change.id}>
       {navigable ? (
         <button
           type="button"
           className="ps-allissues-rowhead"
-          onClick={() => onNavigate(change)}
-          onDoubleClick={() => onOpenProperties(change)}
+          onClick={event => onNavigate(change, event.currentTarget, event.detail > 1)}
+          onDoubleClick={event => onOpenProperties(change, event.currentTarget)}
           title="Click to navigate; double-click to open properties"
         >
           {inner}

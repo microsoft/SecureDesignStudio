@@ -270,6 +270,22 @@ test("AI providers: shared selection, readiness, request routing, persistence an
       await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("docked");
     }
     assert.equal(posts.length, requestCount, "Moving and resizing findings does not run more AI requests");
+    await page.setViewportSize({ width: 1366, height: 900 });
+    await analysis.locator('[data-finding-id="review_0"] .ps-assistant-finding-target').click();
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const navigationDoc = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey);
+    await page.getByRole("button", { name: "File", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^Design with AI/ }).click();
+    await designerSelection.selectOption("codex");
+    await until(() => page.locator(".ps-review-return").count().then(count => count === 0),
+      "Provider change invalidates the hidden Findings origin");
+    await designer.getByRole("button", { name: "Close Threat Model Designer", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "previous return context is no longer available" }).waitFor();
+    assert.equal(await analysis.locator(".ps-assistant-finding").count(), 0);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey), navigationDoc,
+      "Provider invalidation and navigation leave the model unchanged");
     assert.deepEqual(faults, []);
   } finally {
     if (context) await context.close();

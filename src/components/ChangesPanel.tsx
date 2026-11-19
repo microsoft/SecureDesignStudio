@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { useUiShell } from "../uiShell";
+import { useReviewNavigation } from "../reviewNavigation";
 import { ChangeRow } from "./ChangeRow";
 import type { ChangeCategory, ChangeItem, ChangeTarget } from "../diff";
 
@@ -34,6 +35,7 @@ function targetsEqual(
 
 export function ChangesPanel({ embedded = false }: { embedded?: boolean }) {
   const { inspectorActiveTab, inspectorPresentation, inspectorHostRef, setInspectorActiveTab } = useUiShell();
+  const { visitElement } = useReviewNavigation();
   const {
     doc,
     diffChanges,
@@ -44,9 +46,6 @@ export function ChangesPanel({ embedded = false }: { embedded?: boolean }) {
     clearDiff,
     selection,
     activeScenarioId,
-    setActiveScenarioId,
-    setSelection,
-    setFocusTarget,
   } = useStore();
 
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -103,64 +102,13 @@ export function ChangesPanel({ embedded = false }: { embedded?: boolean }) {
     return m;
   }, [diffChanges]);
 
-  const navigate = (c: ChangeItem) => {
+  const navigate = (c: ChangeItem, trigger: HTMLButtonElement, continueVisit = false, openProperties = false) => {
     const t = c.target;
     if (!t) return;
-    // Activate scoping scenario first so per-scenario state is correct
-    // when the detail pane reads it.
-    if (t.scenarioId) {
-      setActiveScenarioId(t.scenarioId);
-    } else if (t.kind === "scenario") {
-      setActiveScenarioId(t.id);
-    } else if (t.kind === "edge") {
-      // Edges always jump to their scenario — the row badge shows the
-      // scenario / #N it was sorted under, and navigation should match.
-      // Prefer the diff-generator's tagged scenario; fall back to the
-      // first scenario in doc order that still contains the edge.
-      const taggedExists =
-        c.scenarioId &&
-        doc.scenarios.some(
-          (s) => s.id === c.scenarioId && s.edgeIds.includes(t.id),
-        );
-      const targetScenarioId =
-        (taggedExists ? c.scenarioId : null) ??
-        doc.scenarios.find((s) => s.edgeIds.includes(t.id))?.id ??
-        null;
-      if (targetScenarioId) setActiveScenarioId(targetScenarioId);
-    } else if (t.kind === "node") {
-      // Nodes only jump when the current scenario doesn't contain them —
-      // visibility on the canvas would otherwise hide the navigation
-      // target behind the scenario filter.
-      const currentScenario = activeScenarioId
-        ? doc.scenarios.find((s) => s.id === activeScenarioId)
-        : null;
-      const stillVisible =
-        !currentScenario || currentScenario.nodeIds.includes(t.id);
-      if (!stillVisible) {
-        const next = doc.scenarios.find((s) => s.nodeIds.includes(t.id));
-        if (next) setActiveScenarioId(next.id);
-      }
-    }
-    if (t.kind === "annotation" && (!t.scenarioId ||
-        !doc.scenarios.some(s => s.id === t.scenarioId && s.textAnnotationIds?.includes(t.id)))) {
-      setActiveScenarioId(doc.scenarios.find(s => s.textAnnotationIds?.includes(t.id))?.id ?? null);
-    }
-    if (t.kind === "scenario") {
-      setSelection(null);
-    } else {
-      setSelection({ kind: t.kind, id: t.id });
-      if (t.kind === "node" || t.kind === "edge" || t.kind === "annotation" || t.kind === "boundary") {
-        setFocusTarget({ kind: t.kind, id: t.id });
-      }
-    }
-    setDiffSelectedTarget(t);
-  };
-
-  const openProperties = (c: ChangeItem) => {
-    const panel = inspectorHostRef.current?.querySelector<HTMLElement>("#ps-inspector-panel");
-    if (panel) savedScrollTopRef.current = panel.scrollTop;
-    navigate(c);
-    setInspectorActiveTab("properties");
+    if (visitElement(t, {
+      source: { kind: "change", id: c.id }, trigger, openProperties, continueVisit,
+      requiredScenarioId: t.scenarioId, scenarioIds: c.scenarioId ? [c.scenarioId] : undefined,
+    })) setDiffSelectedTarget(t);
   };
 
   return (
@@ -245,7 +193,7 @@ export function ChangesPanel({ embedded = false }: { embedded?: boolean }) {
               change={c}
               selected={targetsEqual(c.target ?? null, diffSelectedTarget)}
               onNavigate={navigate}
-              onOpenProperties={openProperties}
+              onOpenProperties={(change, trigger) => navigate(change, trigger, true, true)}
             />
           ))
         )}

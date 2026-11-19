@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -7,7 +8,10 @@ import {
   useState,
   type ReactNode,
   type MutableRefObject,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
+import type { ReviewNavigationState } from "./reviewNavigation";
 
 export type InspectorPresentation = "docked" | "floating" | "window";
 export type InspectorTab =
@@ -38,12 +42,16 @@ interface UiShellApi extends UiPreferences {
   inspectorHostRef: MutableRefObject<HTMLElement | null>;
   documentFileName: string;
   setDocumentFileName: (documentFileName: string) => void;
-  openInspector: (tab?: InspectorTab, trigger?: HTMLElement | null) => void;
+  openInspector: (tab?: InspectorTab, trigger?: HTMLElement | null, options?: { preserveReviewJourney?: boolean; focus?: boolean }) => void;
   closeInspector: (options?: { restoreFocus?: boolean }) => void;
   toggleInspector: (trigger?: HTMLElement | null) => void;
   setInspectorWidth: (width: number) => void;
   setInspectorPinned: (pinned: boolean) => void;
-  setInspectorActiveTab: (tab: InspectorTab) => void;
+  setInspectorActiveTab: (tab: InspectorTab, options?: { automatic?: boolean }) => void;
+  focusInspectorTab: (tab: InspectorTab) => void;
+  reviewNavigation: ReviewNavigationState;
+  setReviewNavigation: Dispatch<SetStateAction<ReviewNavigationState>>;
+  endReviewNavigation: (source?: InspectorTab, notice?: string) => void;
   setDarkTheme: (darkTheme: boolean) => void;
   setAutosaveIntervalMs: (autosaveIntervalMs: number) => void;
   setScopeColor: (field: "outOfScopeColor" | "externalInteractorColor", color: string) => void;
@@ -148,6 +156,19 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
   const [fitViewRequest, setFitViewRequest] = useState(0);
   const [reopenFocusRequest, setReopenFocusRequest] = useState(0);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const focusTicketRef = useRef(0);
+  const [reviewNavigation, setReviewNavigation] = useState<ReviewNavigationState>({
+    returns: [], preview: null, request: null, notice: null, revision: 0,
+  });
+  const endReviewNavigation = useCallback((source?: InspectorTab, notice?: string) => {
+    ++focusTicketRef.current;
+    setReviewNavigation(current => {
+      if (source && !current.returns.some(point => point.tab === source) && current.preview?.tab !== source
+        && !(current.request?.kind === "return" && current.request.point.tab === source)) return current;
+      if (!current.returns.length && !current.preview && !current.request && !current.notice) return current;
+      return { returns: [], preview: null, request: null, notice: notice ?? null, revision: current.revision };
+    });
+  }, []);
 
   useEffect(() => {
     try {
@@ -166,7 +187,10 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       restoreFocusRef.current = trigger ?? fallback;
     };
     const focusInspectorTab = (tab: InspectorTab) => {
-      requestAnimationFrame(() => {
+      const ticket = ++focusTicketRef.current;
+      const view = inspectorHostRef.current?.ownerDocument.defaultView ?? window;
+      view.requestAnimationFrame(() => {
+        if (ticket !== focusTicketRef.current) return;
         inspectorHostRef.current?.ownerDocument.defaultView?.focus();
         inspectorHostRef.current
           ?.querySelector<HTMLElement>(`#ps-inspector-tab-${tab}`)
@@ -190,18 +214,27 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       inspectorPresentation,
       setInspectorPresentation,
       inspectorHostRef,
+      reviewNavigation,
+      setReviewNavigation,
+      endReviewNavigation,
+      focusInspectorTab,
       documentFileName,
       setDocumentFileName,
-      openInspector: (tab = preferences.inspectorActiveTab, trigger) => {
+      openInspector: (requestedTab, trigger, options) => {
+        const tab = requestedTab ?? preferences.inspectorActiveTab;
+        ++focusTicketRef.current;
+        if (!options?.preserveReviewJourney && requestedTab !== undefined) endReviewNavigation();
         rememberTrigger(trigger);
         setPreferences((current) => ({
           ...current,
           inspectorVisible: true,
           inspectorActiveTab: tab,
         }));
-        focusInspectorTab(tab);
+        if (options?.focus !== false) focusInspectorTab(tab);
       },
       closeInspector: (options) => {
+        ++focusTicketRef.current;
+        setReviewNavigation(current => current.request ? { ...current, request: null } : current);
         setPreferences((current) => ({
           ...current,
           inspectorVisible: false,
@@ -211,6 +244,8 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       },
       toggleInspector: (trigger) => {
         if (preferences.inspectorVisible) {
+          ++focusTicketRef.current;
+          setReviewNavigation(current => current.request ? { ...current, request: null } : current);
           rememberTrigger(trigger);
           setPreferences((current) => ({
             ...current,
@@ -230,8 +265,11 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
         setPreferences((current) => ({ ...current, inspectorWidth })),
       setInspectorPinned: (inspectorPinned) =>
         setPreferences((current) => ({ ...current, inspectorPinned })),
-      setInspectorActiveTab: (inspectorActiveTab) =>
-        setPreferences((current) => ({ ...current, inspectorActiveTab })),
+      setInspectorActiveTab: (inspectorActiveTab, options) => {
+        ++focusTicketRef.current;
+        if (!options?.automatic) endReviewNavigation();
+        setPreferences((current) => ({ ...current, inspectorActiveTab }));
+      },
       setDarkTheme: (darkTheme) =>
         setPreferences((current) => ({ ...current, darkTheme })),
       setAutosaveIntervalMs: (autosaveIntervalMs) =>
@@ -241,6 +279,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
         setPreferences(current => ({ ...current, [field]: color }));
       },
       resetPreferences: () => {
+        endReviewNavigation();
         try {
           window.localStorage.removeItem("ps-side-width");
         } catch {
@@ -252,7 +291,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       requestFitView: () => setFitViewRequest((current) => current + 1),
       reopenFocusRequest,
     };
-  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation]);
+  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation, reviewNavigation, endReviewNavigation]);
 
   return (
     <UiShellContext.Provider value={value}>{children}</UiShellContext.Provider>

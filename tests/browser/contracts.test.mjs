@@ -25,6 +25,7 @@ import { registerAiGuidanceContracts } from "./ai-guidance-contracts.mjs";
 import { registerFirstRunContracts } from "./first-run-contracts.mjs";
 import { unzipSync, strFromU8 } from "fflate";
 import { DOMParser } from "@xmldom/xmldom";
+import { resolve } from "node:path";
 
 let harness;
 before(async () => { harness = await startHarness(); });
@@ -69,6 +70,240 @@ registerSampleContracts({ getHarness: () => harness, exportModel });
 registerDesignerContracts({ getHarness: () => harness });
 registerAiGuidanceContracts({ getHarness: () => harness, exportModel });
 registerFirstRunContracts({ getHarness: () => harness });
+
+async function settleNavigationNodes(page) {
+  await scenario(page).selectOption("");
+  await until(() => page.locator(".react-flow__node-process").count().then(count => count === 3), "all fixture nodes mounted");
+  await until(() => page.evaluate(key => {
+    window.dispatchEvent(new Event("pagehide"));
+    return JSON.parse(localStorage.getItem(key)).doc.nodes.every(node => {
+      const element = document.querySelector(`[data-id="${node.id}"] .ps-node`);
+      return element && node.size?.width === element.offsetWidth && node.size?.height === element.offsetHeight;
+    });
+  }, autosaveKey), "all fixture geometry measured before observing navigation");
+}
+
+test("regression: exact review target and Back retain the originating context", async () => {
+  await harness.run("regression: exact review target and Back", async ({ page, observations }) => {
+    const input = modelFixture();
+    input.doc.nodes[0].title = input.doc.nodes[1].title = "Repeated service";
+    input.doc.issues = Array.from({ length: 14 }, (_, index) => ({
+      id: `i_review_${index}`, title: "Review repeated service",
+      description: index === 0 ? "Exact navigation origin" : `Review context ${index}`,
+      targetKind: "node", targetId: index === 0 ? "n_client" : "n_api",
+      scenarioIds: ["s_primary"], status: "Active", createdAt: index, replies: [],
+    }));
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "exact-target.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(input)),
+    });
+    await settleNavigationNodes(page);
+    await scenario(page).selectOption("s_archive");
+    await node(page, "n_archive").click();
+    await node(page, "n_api").click({ modifiers: ["ControlOrMeta"] });
+    await page.locator('button[aria-controls="ps-command-menu-filter"]').click();
+    await page.getByLabel("Search", { exact: true }).fill("Archive");
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
+    await page.getByRole("tab", { name: /^Issues\b/ }).click();
+    const panel = page.locator("#ps-inspector-panel-issues");
+    await panel.getByPlaceholder("Search issues…").fill("Review");
+    await panel.getByRole("tab", { name: /^Active/ }).click();
+    const row = panel.locator(".ps-allissues-row").filter({ hasText: "Exact navigation origin" });
+    await row.getByRole("button", { name: "Details", exact: true }).click();
+    await row.getByPlaceholder("Reply…").fill("Unsent source reply");
+    const origin = row.locator(".ps-allissues-rowhead");
+    await origin.scrollIntoViewIfNeeded();
+    await origin.focus();
+    const scrollBefore = await page.locator("#ps-inspector-panel").evaluate(element => element.scrollTop);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const before = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), autosaveKey);
+    await origin.click();
+    await until(() => node(page, "n_client").getAttribute("class").then(value => /\bselected\b/.test(value)),
+      "the exact target ID, not its identically named twin");
+    assert.equal(await scenario(page).inputValue(), "s_primary");
+    await page.getByRole("button", { name: "Back to Issues", exact: true }).click();
+    await until(() => origin.evaluate(element => element === element.ownerDocument.activeElement),
+      "Back restores the originating control");
+    assert.equal(await scenario(page).inputValue(), "s_archive");
+    assert.match(await node(page, "n_archive").getAttribute("class"), /\bselected\b/);
+    assert.match(await node(page, "n_api").getAttribute("class"), /\bselected\b/, "Back restores the additional selection too");
+    assert.equal(await panel.getByPlaceholder("Search issues…").inputValue(), "Review");
+    assert.equal(await panel.getByRole("tab", { name: /^Active/ }).getAttribute("aria-selected"), "true");
+    assert.equal(await row.getByPlaceholder("Reply…").inputValue(), "Unsent source reply");
+    assert.equal(await page.locator(".react-flow__node-process").count(), 2, "The original diagram filter is restored");
+    assert.ok(Math.abs(await page.locator("#ps-inspector-panel").evaluate(element => element.scrollTop) - scrollBefore) <= 2,
+      "Back restores reading position");
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const after = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), autosaveKey);
+    assert.deepEqual(after.doc, before.doc, "Navigation does not change model data");
+    assert.deepEqual(after.past, before.past, "Navigation does not add Undo entries");
+    assert.deepEqual(after.future, before.future, "Navigation does not discard Redo entries");
+    assert.deepEqual(after.view, before.view, "Scenario and diagram filters return unchanged");
+    observations.exactTarget = "n_client, not the identically named n_api";
+    observations.restored = "Issues, Archive scenario/selection, filter, unsent reply, scroll and originating control";
+  });
+});
+
+test("usability: exact review double-clicks, popup focus, dismiss and compact return strip", async () => {
+  await harness.run("usability: exact review navigation presentations", async ({ page, context, observations }) => {
+    await settleNavigationNodes(page);
+    await scenario(page).selectOption("s_archive");
+    await node(page, "n_archive").click();
+    const previous = modelFixture();
+    previous.doc.edges[0].title = "Before exact flow";
+    await page.locator("#ps-file-compare-input").setInputFiles({
+      name: "before-navigation.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(previous)),
+    });
+    const origin = page.locator(".ps-diff-row").filter({ hasText: "Before exact flow" }).getByRole("button");
+    await origin.scrollIntoViewIfNeeded();
+    const beforeClick = await origin.boundingBox();
+    await origin.click();
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "A focus-only visit does not move row chrome");
+    assert.equal((await origin.boundingBox()).y, beforeClick.y, "The row stays under the pointer between clicks");
+    await scenario(page).selectOption("s_archive");
+    await node(page, "n_archive").click();
+    await origin.dblclick();
+    await page.getByRole("button", { name: "Back to Changes", exact: true }).waitFor();
+    assert.equal(await scenario(page).inputValue(), "s_primary");
+    assert.match(await page.locator('.react-flow__edge[data-id="e_request"]').getAttribute("class"), /\bselected\b/);
+    await page.getByRole("button", { name: "Back to Changes", exact: true }).click();
+    await until(() => origin.evaluate(element => element === element.ownerDocument.activeElement), "Changes origin focus");
+    assert.equal(await scenario(page).inputValue(), "s_archive", "Double-click captures before its first click changes scenario");
+    assert.match(await node(page, "n_archive").getAttribute("class"), /\bselected\b/);
+
+    await origin.dblclick();
+    await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("floating");
+    await page.getByRole("button", { name: "Back to Changes", exact: true }).waitFor();
+    const pending = context.waitForEvent("page");
+    await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("window");
+    const child = await pending;
+    await child.getByRole("button", { name: "Back to Changes", exact: true }).waitFor();
+    if (process.env.SDS_TEST_OUTPUT_DIR) {
+      observations.popupScreenshot = "exact-target-popup.png";
+      await child.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, observations.popupScreenshot) });
+    }
+    await child.getByRole("button", { name: "Back to Changes", exact: true }).click();
+    const childOrigin = child.locator(".ps-diff-row").filter({ hasText: "Before exact flow" }).getByRole("button");
+    await until(() => childOrigin.evaluate(element => element === element.ownerDocument.activeElement),
+      "Back restores focus in the popup owner document");
+    await childOrigin.dblclick();
+    await until(() => child.locator("#ps-inspector-tab-properties").evaluate(element => element === element.ownerDocument.activeElement),
+      "Exact landing owns popup focus");
+    await child.close();
+    await page.getByRole("button", { name: "Back to Changes", exact: true }).waitFor();
+    await page.setViewportSize({ width: 320, height: 480 });
+    const title = page.locator("#ps-inspector-panel-properties").getByLabel(/^Title/);
+    assert.equal(await title.evaluate(control => [...control.labels].some(label => label.firstChild.textContent.trim() === "Title")), true);
+    await title.scrollIntoViewIfNeeded();
+    const layout = await page.evaluate(() => {
+      const rect = selector => {
+        const { x, y, width, height, bottom, right } = document.querySelector(selector).getBoundingClientRect();
+        return { x, y, width, height, bottom, right, clientWidth: document.querySelector(selector).clientWidth };
+      };
+      const title = document.querySelector("#ps-inspector-panel-properties label textarea").closest("label");
+      const bounds = title.getBoundingClientRect();
+      return { strip: rect(".ps-review-return"), tabs: rect(".ps-inspector-tabs"), inspector: rect(".ps-inspector"),
+        panel: rect("#ps-inspector-panel"), field: { y: bounds.y, bottom: bounds.bottom },
+        zoom: rect(".ps-canvas-zoom-controls"), dismiss: rect(".ps-review-return-dismiss") };
+    });
+    assert.equal(Math.round(layout.strip.width), layout.inspector.clientWidth, "The return strip spans the full inspector content width");
+    assert.ok(Math.abs(layout.strip.y - layout.tabs.bottom) <= 1, "The strip is immediately below the inspector tabs");
+    assert.ok(layout.field.y >= layout.panel.y - 1 && layout.field.bottom <= layout.panel.bottom + 1,
+      `A complete labeled field remains usable: ${JSON.stringify(layout)}`);
+    assert.ok(layout.dismiss.right <= 320 && layout.zoom.bottom <= layout.inspector.y,
+      "Dismiss and canvas zoom keep their usable space");
+    if (process.env.SDS_TEST_OUTPUT_DIR) {
+      observations.narrowScreenshot = "exact-target-narrow.png";
+      await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, observations.narrowScreenshot) });
+    }
+    await page.getByRole("button", { name: "Dismiss return navigation", exact: true }).click();
+    await until(() => page.locator("#ps-inspector-panel-properties").evaluate(element => element === element.ownerDocument.activeElement),
+      "Dismiss focuses the active destination view");
+    assert.equal(await page.locator(".ps-review-return").count(), 0);
+    assert.equal(await title.inputValue(), "Request payload", "Dismiss retains the exact destination");
+    await page.setViewportSize({ width: 1366, height: 900 });
+    await page.getByRole("tab", { name: /^Changes\b/ }).click();
+    await origin.dblclick();
+    await page.getByRole("tab", { name: /^Comments\b/ }).click();
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "A manual view change ends the explicit journey");
+    await page.getByRole("tab", { name: /^Changes\b/ }).click();
+    await origin.dblclick();
+    await scenario(page).selectOption("s_archive");
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "A manual scenario change ends the explicit journey");
+    observations.sameView = "Real pointer double-click, no inserted return chrome after the first click";
+    observations.presentation = "Docked -> floating -> popup -> native close retains the journey and owner-document focus";
+  });
+});
+
+test("regression: exact review sources retain drafts and fail honestly after removal or replacement", async () => {
+  await harness.run("regression: exact review source invalidation", async ({ page }) => {
+    const input = modelFixture();
+    input.doc.issues = ["i_origin", "i_twin"].map(id => ({
+      id, title: "Repeated review", targetKind: "node", targetId: "n_client",
+      scenarioIds: ["s_primary"], status: "Active", createdAt: 1, description: id, replies: [],
+    }));
+    input.doc.comments = [{ id: "c_origin", scenarioId: "s_primary", targetKind: "edge", targetId: "e_request",
+      status: "Active", createdAt: 1, text: "Comment navigation origin", replies: [] }];
+    input.doc.deviations = ["dev_origin", "dev_draft"].map(id => ({
+      id, key: id, kind: "other", title: "Repeated deviation", description: id, explanation: "Saved explanation",
+      targetKind: "node", targetId: id === "dev_origin" ? "n_client" : "n_api",
+      scenarioIds: ["s_primary"], evidenceIds: [], status: "Active", createdAt: 1, updatedAt: 1,
+    }));
+    const load = () => page.locator("#ps-file-open-input").setInputFiles({
+      name: "navigation-context.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(input)),
+    });
+    await load();
+    await settleNavigationNodes(page);
+    await scenario(page).selectOption("s_archive");
+    await page.getByRole("tab", { name: /^Comments\b/ }).click();
+    const comment = page.locator('[data-review-kind="comment"][data-review-id="c_origin"]');
+    await comment.getByRole("button", { name: "Details", exact: true }).click();
+    await comment.getByPlaceholder("Reply…").fill("Unsent comment reply");
+    await comment.locator(".ps-allissues-rowhead").click();
+    await page.getByRole("button", { name: "Back to Comments", exact: true }).click();
+    await until(() => comment.locator(".ps-allissues-rowhead").evaluate(element => element === element.ownerDocument.activeElement),
+      "Exact comment control restored");
+    assert.equal(await comment.getByPlaceholder("Reply…").inputValue(), "Unsent comment reply");
+    assert.equal(await scenario(page).inputValue(), "s_archive");
+    await page.getByRole("tab", { name: /^Deviations\b/ }).click();
+    const draft = page.locator('[data-review-kind="deviation"][data-review-id="dev_draft"]');
+    await draft.getByRole("button", { name: "Explain", exact: true }).click();
+    await draft.getByLabel(/^Explanation/).fill("Unsent deviation explanation");
+    const deviation = page.locator('[data-review-kind="deviation"][data-review-id="dev_origin"]');
+    await deviation.getByRole("button", { name: "View target", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Deviations", exact: true }).click();
+    await until(() => deviation.getByRole("button", { name: "View target", exact: true })
+      .evaluate(element => element === element.ownerDocument.activeElement), "Exact deviation control restored");
+    assert.equal(await draft.getByLabel(/^Explanation/).inputValue(), "Unsent deviation explanation");
+    await page.getByRole("tab", { name: /^Issues\b/ }).click();
+    await page.locator("#ps-inspector-panel-issues").getByRole("tab", { name: /^Active/ }).click();
+    const originIssue = page.locator('#ps-inspector-panel-issues [data-review-id="i_origin"]');
+    await originIssue.getByRole("button", { name: "Details", exact: true }).click();
+    await originIssue.getByPlaceholder("Reply…").fill("Keep this draft when the issue is resolved elsewhere");
+    await originIssue.locator(".ps-allissues-rowhead").click();
+    await page.locator('#ps-inspector-panel-properties [data-review-id="i_origin"]').getByRole("button", { name: "Resolve", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Issues", exact: true }).click();
+    await until(() => originIssue.locator(".ps-allissues-rowhead").evaluate(control => control === control.ownerDocument.activeElement),
+      "Back reveals its exact source despite the changed status, without clearing the filter");
+    assert.equal(await originIssue.getByPlaceholder("Reply…").inputValue(), "Keep this draft when the issue is resolved elsewhere");
+    assert.equal(await page.locator("#ps-inspector-panel-issues").getByRole("tab", { name: /^Active/ }).getAttribute("aria-selected"), "true");
+    await originIssue.locator(".ps-allissues-rowhead").click();
+    await page.evaluate(() => {
+      const original = window.confirm;
+      window.confirm = message => message === "Delete this issue and its replies?" ? true : original(message);
+    });
+    await page.locator('#ps-inspector-panel-properties [data-review-id="i_origin"]').getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Issues", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "The original review record is no longer available" }).waitFor();
+    assert.equal(await page.locator('#ps-inspector-panel-issues [data-review-id="i_origin"]').count(), 0);
+    await until(() => page.locator("#ps-inspector-tab-issues").evaluate(element => element === element.ownerDocument.activeElement),
+      "Unavailable origin falls back to its view, never the identically named record");
+    await page.locator('#ps-inspector-panel-issues [data-review-id="i_twin"] .ps-allissues-rowhead').click();
+    await page.getByRole("button", { name: "Back to Issues", exact: true }).waitFor();
+    await load();
+    await page.locator('#ps-inspector-panel-issues [data-review-id="i_origin"]').waitFor({ state: "attached" });
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "Open clears old document-bound navigation even when IDs are reused");
+  });
+});
 
 const declutterMeaning = doc => ({
   ...doc,

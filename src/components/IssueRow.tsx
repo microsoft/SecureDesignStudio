@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useStore } from "../store";
 import { ISSUE_NOT_EVALUATED_LABELS, type PsIssue } from "../types";
 import { safeNavigationHref } from "../urlSafety";
@@ -10,9 +10,11 @@ export function IssueRow({
   onNavigate,
   hideTarget = false,
   selected = false,
+  revealRequest,
 }: {
   issue: PsIssue;
-  onNavigate?: () => void;
+  onNavigate?: (trigger: HTMLButtonElement) => void;
+  revealRequest?: number;
   // When true, omit the "Node: …" / "Edge: …" header. Useful when the row
   // is already rendered in the context of its target (e.g. inside the
   // selected node's side panel).
@@ -33,6 +35,9 @@ export function IssueRow({
   } = useStore();
 
   const [expanded, setExpanded] = useState(false);
+  useLayoutEffect(() => {
+    if (revealRequest !== undefined) setExpanded(true);
+  }, [revealRequest]);
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
   const [descDraft, setDescDraft] = useState(issue.description);
@@ -119,6 +124,8 @@ export function IssueRow({
 
   return (
     <div
+      data-review-kind="issue"
+      data-review-id={issue.id}
       className={`ps-allcomments-row ps-allissues-row ps-allcomments-${issue.status.toLowerCase()}${
         selected ? " ps-allissues-selected" : ""
       }`}
@@ -126,7 +133,8 @@ export function IssueRow({
       <button
         type="button"
         className="ps-allissues-rowhead"
-        onClick={onNavigate}
+        data-review-focus
+        onClick={event => onNavigate?.(event.currentTarget)}
         title={onNavigate ? "Click to navigate to this item" : undefined}
         disabled={!onNavigate}
       >
@@ -166,6 +174,7 @@ export function IssueRow({
           </div>
         )}
       </button>
+      {!hideTarget && !node && !edge && <p className="ps-description-below">Target no longer available.</p>}
 
       {issue.resolutionLink && (() => {
         // Defensive scheme check. Today resolutionLink is only set from

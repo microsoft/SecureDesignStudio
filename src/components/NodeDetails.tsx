@@ -51,7 +51,7 @@ import { DFD_ROLES, DFD_ROLE_LABELS, DFD_SCOPE_LABELS, formatDfdValue, isDfdRole
   nodeDfdSummary, resolveNodeReviewScope } from "../dfdSemantics";
 
 export function NodeDetails({ node }: { node: PsNode }) {
-  const { outOfScopeColor, externalInteractorColor, setScopeColor } = useUiShell();
+  const { outOfScopeColor, externalInteractorColor, setScopeColor, endReviewNavigation } = useUiShell();
   const libraries = useLibraries();
   const inventoryField = inventoryFieldFor(libraries.fields);
   const {
@@ -208,7 +208,7 @@ export function NodeDetails({ node }: { node: PsNode }) {
       {tab === "general" && inScenario && attachedData.length > 0 && (
         <p className="ps-field-help">
           {attachedData.length} privacy data {attachedData.length === 1 ? "item is" : "items are"} recorded in this scenario.{" "}
-          <button type="button" onClick={() => setTab("privacy")}>View privacy data</button>
+          <button type="button" onClick={() => { endReviewNavigation(); setTab("privacy"); }}>View privacy data</button>
         </p>
       )}
 

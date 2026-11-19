@@ -35,6 +35,8 @@ function getSnapshot(): DetailsTab {
   return currentTab;
 }
 
+export function getDetailsTab(): DetailsTab { return currentTab; }
+
 export function setDetailsTab(tab: DetailsTab): void {
   if (tab === currentTab) return;
   currentTab = tab;

@@ -1,4 +1,5 @@
 import type { DetailsTab } from "./detailsTabStore";
+import { useUiShell } from "../uiShell";
 
 export interface DetailsTabsProps {
   tab: DetailsTab;
@@ -18,6 +19,7 @@ export function DetailsTabs({
   generalIncomplete,
   privacyIncomplete,
 }: DetailsTabsProps) {
+  const { endReviewNavigation } = useUiShell();
   const incompleteByTab: Record<DetailsTab, boolean | undefined> = {
     general: generalIncomplete,
     privacy: privacyIncomplete,
@@ -34,7 +36,7 @@ export function DetailsTabs({
             role="tab"
             aria-selected={active}
             className={`ps-details-tab${active ? " is-active" : ""}`}
-            onClick={() => onChange(t.id)}
+            onClick={() => { endReviewNavigation(); onChange(t.id); }}
           >
             {t.label}
             {incomplete && (

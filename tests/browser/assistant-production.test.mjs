@@ -1395,6 +1395,219 @@ async function expectFocused(page, kind, id, previous) {
   }
 }
 
+test("production navigation: exact AI references and Back preserve scenario, filters, drafts, reading place and history", async () => {
+  const initial = fixture();
+  initial.doc.nodes[0].title = initial.doc.nodes[1].title = "Repeated service";
+  const responses = findings.map(item => item.id === "node" ? {
+    ...item, references: [
+      reference("node", "n_client", "Repeated service"), reference("node", "n_api", "Repeated service"),
+    ],
+  } : item);
+  await run(async ({ page }) => {
+    await settleReviewGeometry(page);
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.getByLabel("Ask about this model", { exact: true }).fill("Unsent review question");
+    await page.getByRole("tab", { name: "AI Analysis", exact: true }).click();
+    await scenario(page).selectOption("s_archive");
+    await element(page, "node", "n_archive").click();
+    await page.locator('button[aria-controls="ps-command-menu-filter"]').click();
+    await page.getByLabel("Search", { exact: true }).fill("Archive");
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
+    await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    const origin = finding(page, "Node finding").locator('[data-reference-id="n_client"]');
+    await origin.scrollIntoViewIfNeeded();
+    await origin.focus();
+    const scrollBefore = await page.locator(".ps-assistant").evaluate(root => root.scrollTop);
+    const before = await savedState(page);
+    await origin.click();
+    await expectSelected(page, "node", "n_client");
+    assert.equal(await scenario(page).inputValue(), "s_primary");
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
+    if (process.env.SDS_TEST_OUTPUT_DIR) {
+      await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, "findings-exact-target.png") });
+    }
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await until(() => origin.evaluate(control => control === control.ownerDocument.activeElement),
+      "Back restores the exact source reference control");
+    assert.equal(await scenario(page).inputValue(), "s_archive");
+    await expectSelected(page, "node", "n_archive");
+    assert.ok(Math.abs(await page.locator(".ps-assistant").evaluate(root => root.scrollTop) - scrollBefore) <= 2,
+      "Back restores the Findings reading position");
+    const after = await savedState(page);
+    assert.deepEqual(after.doc, before.doc);
+    assert.deepEqual(after.past, before.past);
+    assert.deepEqual(after.future, before.future);
+    assert.deepEqual(after.view, before.view);
+    assert.equal(await page.getByRole("button", { name: "Pin inspector tab", exact: true }).count(), 1, "Pin state is unchanged");
+    if (process.env.SDS_TEST_OUTPUT_DIR) {
+      await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, "findings-back-context.png") });
+    }
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    assert.equal(await page.getByLabel("Ask about this model", { exact: true }).inputValue(), "Unsent review question");
+    await page.getByRole("tab", { name: "AI Analysis", exact: true }).click();
+    await page.locator('button[aria-controls="ps-command-menu-filter"]').click();
+    await page.getByRole("button", { name: "Clear all", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Pin inspector tab", exact: true }).click();
+    await origin.click();
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "Pinned focus-only navigation adds no moving strip");
+    await element(page, "node", "n_client").focus();
+    await page.keyboard.press("Delete");
+    await until(() => element(page, "node", "n_client").count().then(count => count === 0), "original AI target removed");
+    assert.equal(await heading(page, "Node finding").isDisabled(), true,
+      "A removed primary reference never silently becomes a different same-title object");
+    assert.equal(await origin.isDisabled(), true);
+    assert.equal(await finding(page, "Node finding").locator('[data-reference-id="n_api"]').isEnabled(), true,
+      "The other explicitly identified reference remains a separate action");
+    assert.equal(await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true,
+      "Creation cannot silently switch away from its original target");
+  }, { initial, respond: ({ route }) => reply(route, { answer: "Exact synthetic references.", findings: responses, references: [] }) });
+});
+
+test("production navigation: created record IDs land exactly in popup and support a nested Back journey", async () => {
+  const initial = fixture();
+  initial.doc.issues.push({ ...initial.doc.issues[0], id: "i_same_title", title: "Node finding",
+    description: "Existing same-title record", status: "Resolved", targetId: "n_api" });
+  initial.doc.workItems = [{ id: "wi_same_title", title: "Flow finding", description: "Existing same-title work", link: "" }];
+  await run(async ({ page }) => {
+    await settleReviewGeometry(page);
+    await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    await page.getByRole("tab", { name: /^Issues\b/ }).click();
+    const issues = page.locator("#ps-inspector-panel-issues");
+    await issues.getByRole("tab", { name: /^Resolved/ }).click();
+    await issues.getByPlaceholder("Search issues…").fill("Node finding");
+    await issues.getByRole("button", { name: "Details", exact: true }).click();
+    await issues.getByPlaceholder("Reply…").fill("Unsent reply on the other record");
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    const child = await popOutReview(page);
+    const before = await savedState(page);
+    await finding(child, "Node finding").getByRole("button", { name: "Create issue", exact: true }).click();
+    await child.locator("#ps-inspector-panel-issues").waitFor();
+    const created = (await savedState(page)).doc.issues.filter(item => !before.doc.issues.some(old => old.id === item.id));
+    assert.equal(created.length, 1);
+    assert.equal(created[0].targetId, "n_client");
+    const exactRow = child.locator(`#ps-inspector-panel-issues [data-review-id="${created[0].id}"]`);
+    const exactControl = exactRow.locator(".ps-allissues-rowhead");
+    await until(() => exactControl.evaluate(control => control === control.ownerDocument.activeElement),
+      "Returned issue ID owns popup focus, not the Issues tab or title twin");
+    await frameSettled(child);
+    assert.equal(await exactControl.evaluate(control => control === control.ownerDocument.activeElement), true,
+      "A delayed generic tab-focus frame must not steal exact landing focus");
+    assert.equal(await exactRow.getByRole("button", { name: "Hide", exact: true }).count(), 1, "The exact saved row is revealed");
+    assert.equal(await child.getByPlaceholder("Search issues…").inputValue(), "Node finding");
+    assert.equal(await child.getByRole("tab", { name: /^Resolved/ }).getAttribute("aria-selected"), "true");
+    const twin = child.locator('#ps-inspector-panel-issues [data-review-id="i_same_title"]');
+    assert.equal(await twin.getByPlaceholder("Reply…").inputValue(), "Unsent reply on the other record");
+    const afterCreation = await savedState(page);
+    assert.equal(afterCreation.past.length, before.past.length + 1, "Only creation adds one Undo entry");
+    if (process.env.SDS_TEST_OUTPUT_DIR) {
+      await child.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, "exact-created-issue-popup.png") });
+    }
+    await exactControl.click();
+    await child.getByRole("button", { name: "Back to Issues", exact: true }).click();
+    await until(() => exactControl.evaluate(control => control === control.ownerDocument.activeElement), "Nested Back returns to the saved record");
+    assert.equal(await twin.getByPlaceholder("Reply…").inputValue(), "Unsent reply on the other record");
+    await child.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await until(() => heading(child, "Node finding").evaluate(control => control === control.ownerDocument.activeElement),
+      "A completed creation returns to its same finding, not another enabled action");
+    assert.deepEqual((await savedState(page)).doc, afterCreation.doc);
+    assert.deepEqual((await savedState(page)).past, afterCreation.past);
+    await finding(child, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).click();
+    const savedWork = (await savedState(page)).doc.workItems;
+    const newWork = savedWork.filter(item => item.id !== "wi_same_title");
+    assert.equal(newWork.length, 1);
+    const name = child.locator(`[data-review-kind="work"][data-review-id="${newWork[0].id}"]`).getByLabel("Name", { exact: true });
+    await until(() => name.evaluate(control => control === control.ownerDocument.activeElement), "Returned Work ID opens its exact editor");
+    assert.equal(await name.inputValue(), "Flow finding");
+    assert.equal(savedWork.find(item => item.id === "wi_same_title").description, "Existing same-title work");
+    await child.close();
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await until(() => heading(page, "Flow finding").evaluate(control => control === control.ownerDocument.activeElement),
+      "Native popup close preserves the created-record return journey");
+  }, { initial });
+});
+
+test("production navigation: reanalysis invalidates return context even when finding IDs are reused", async () => {
+  let pending;
+  await run(async ({ page, importModel }) => {
+    await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    await page.getByRole("button", { name: "Analyze model", exact: true }).click();
+    await until(() => !!pending, "second synthetic analysis is pending");
+    await heading(page, "Node finding").click();
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
+    await reply(pending, { answer: "New analysis with reused IDs.",
+      findings: findings.map(item => item.id === "node" ? { ...item, title: "Replacement finding", references: [api] } : item),
+      references: [] });
+    await until(() => page.locator(".ps-review-return").count().then(count => count === 0), "analysis invalidates old return context");
+    await page.getByRole("status").filter({ hasText: "previous return context is no longer available" }).waitFor();
+    await expectSelected(page, "node", "n_client");
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await heading(page, "Replacement finding").click();
+    await expectSelected(page, "node", "n_api");
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
+    await importModel(fixture());
+    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 0), "replacement document loaded");
+    assert.equal(await page.locator(".ps-review-return").count(), 0);
+    assert.equal(await page.locator(".ps-assistant-finding").count(), 0);
+  }, { respond: ({ route, index }) => {
+    if (index === 0) return reply(route, { answer: "Initial analysis.", findings, references: [] });
+    pending = route;
+  } });
+});
+
+test("production navigation: short narrow journeys retain a complete field, return actions and canvas zoom", async () => {
+  await run(async ({ page }) => {
+    await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    await heading(page, "Flow finding").click();
+    const back = page.getByRole("button", { name: "Back to Findings", exact: true });
+    await back.waitFor();
+    const title = page.locator("#ps-inspector-panel-properties").getByLabel(/^Title/);
+    for (const height of [480, 400]) {
+      await page.setViewportSize({ width: 320, height });
+      await back.scrollIntoViewIfNeeded();
+      const strip = await back.evaluate(control => {
+        const row = control.parentElement, inspector = control.closest(".ps-inspector");
+        return { y: row.getBoundingClientRect().y, width: row.getBoundingClientRect().width, available: inspector.clientWidth,
+          tabsBottom: inspector.querySelector(".ps-inspector-tabs").getBoundingClientRect().bottom };
+      });
+      assert.ok(Math.abs(strip.y - strip.tabsBottom) <= 1);
+      assert.equal(Math.round(strip.width), Math.round(strip.available));
+      await title.scrollIntoViewIfNeeded();
+      const layout = await title.evaluate(control => {
+        const bounds = selector => {
+          const { x, y, width, bottom, right } = document.querySelector(selector).getBoundingClientRect();
+          return { x, y, width, bottom, right };
+        };
+        const label = control.closest("label").getBoundingClientRect();
+        return { label: { y: label.y, bottom: label.bottom }, panel: bounds("#ps-inspector-panel"),
+          inspector: bounds(".ps-inspector"), zoom: bounds(".ps-canvas-zoom-controls") };
+      });
+      assert.ok(layout.label.y >= Math.max(layout.panel.y, layout.inspector.y) - 1
+        && layout.label.bottom <= Math.min(layout.panel.bottom, layout.inspector.bottom) + 1,
+      `The complete labeled field must fit, not just exist: ${JSON.stringify(layout)}`);
+      assert.ok(layout.zoom.bottom <= layout.inspector.y, "Short layouts retain canvas zoom space");
+      if (process.env.SDS_TEST_OUTPUT_DIR) {
+        await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, `findings-narrow-return-${height}.png`) });
+      }
+      const dismiss = page.getByRole("button", { name: "Dismiss return navigation", exact: true });
+      await dismiss.scrollIntoViewIfNeeded();
+      const bounds = await dismiss.boundingBox();
+      assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 320 && bounds.y + bounds.height <= height,
+        "Return actions remain reachable in the short inspector");
+    }
+    await page.getByRole("button", { name: "Dismiss return navigation", exact: true }).click();
+    await until(() => page.locator("#ps-inspector-panel-properties").evaluate(control => control === control.ownerDocument.activeElement),
+      "Dismiss focuses the destination panel");
+    assert.equal(await title.inputValue(), "Request payload");
+    await title.scrollIntoViewIfNeeded();
+    assert.equal(await title.evaluate(control => {
+      const field = control.closest("label").getBoundingClientRect();
+      const inspector = control.closest(".ps-inspector").getBoundingClientRect();
+      return field.top >= inspector.top - 1 && field.bottom <= inspector.bottom + 1;
+    }), true, "Dismissing the return strip must not collapse the short destination editor");
+  });
+});
+
 test("production: Assistant findings use issue-style scenario, selection, focus and row feedback", async () => {
   await run(async ({ page }) => {
     await scenario(page).selectOption("s_archive");

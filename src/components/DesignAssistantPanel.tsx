@@ -15,6 +15,8 @@ import {
   type AssistantResponse,
 } from "../designAssistant";
 import { useUiShell } from "../uiShell";
+import { reviewElementExists, useReviewNavigation, type ReviewSource } from "../reviewNavigation";
+import type { PsDocument } from "../types";
 import { useAiProvider } from "../aiProvider";
 import { AiProviderSelector } from "./AiProviderSelector";
 import {
@@ -57,6 +59,14 @@ const SUGGESTED_PROMPT_GROUPS = [
 
 function messageId(): string {
   return `assistant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function findingNavigationTargets(findings: AssistantFinding[], doc: PsDocument) {
+  // Resolve once per response; deletion must not promote a different reference.
+  return new Map(findings.map(finding => [finding.id, {
+    focus: finding.references.find(reference => reviewElementExists(doc, reference)),
+    issue: finding.references.find(reference => (reference.kind === "node" || reference.kind === "edge") && reviewElementExists(doc, reference)),
+  }]));
 }
 
 const SEVERITY_SCORE = { critical: 92, high: 76, medium: 54, low: 28 } as const;
@@ -112,14 +122,11 @@ export function DesignAssistantPanel({
     documentSessionId,
     collab,
     activeScenario,
-    setActiveScenarioId,
     authenticationCatalog,
     protocolLibrary,
     classificationDefinitions,
     nodeTypeCatalog,
     selection,
-    setSelection,
-    setFocusTarget,
     addIssue,
     createWorkItem,
     updateWorkItem,
@@ -130,13 +137,15 @@ export function DesignAssistantPanel({
     assistantAnalysis,
     setAssistantAnalysis,
   } = useStore();
-  const { openInspector } = useUiShell();
+  const { openInspector, endReviewNavigation } = useUiShell();
+  const { visitElement, visitRecord } = useReviewNavigation();
   const classificationId = useId();
   const simulation = useBreachSimulation();
   const [mode, setMode] = useState<AssistantMode>("analyze");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [navigationTargets, setNavigationTargets] = useState(() => findingNavigationTargets(findings, doc));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -158,6 +167,7 @@ export function DesignAssistantPanel({
     setAssistantAnalysis(null);
     setAcceptedFindingIds(new Set());
     setSelectedFindingId(null);
+    setNavigationTargets(new Map());
     modeScroll.current = { analyze: 0, chat: 0 };
     conversationScroll.current = 0;
     simulation.reset();
@@ -177,11 +187,13 @@ export function DesignAssistantPanel({
   useEffect(() => {
     if (providerRef.current === aiProvider.provider) return;
     providerRef.current = aiProvider.provider;
+    endReviewNavigation("assistant", "The AI provider changed. Its previous return context is no longer available.");
     setMessages([]);
     setFindings([]);
     setAssistantAnalysis(null);
     setAcceptedFindingIds(new Set());
     setSelectedFindingId(null);
+    setNavigationTargets(new Map());
     simulation.reset();
     setError(null);
   }, [aiProvider.provider]);
@@ -226,11 +238,7 @@ export function DesignAssistantPanel({
   const context = contextState.context;
   const assistantUnavailable = !aiProvider.ready || !context;
 
-  const referenceExists = (reference: AssistantReference) => {
-    const items = reference.kind === "node" ? doc.nodes
-      : reference.kind === "edge" ? doc.edges : doc.boundaries;
-    return items.some((item) => item.id === reference.id);
-  };
+  const referenceExists = (reference: AssistantReference) => reviewElementExists(doc, reference);
 
   useEffect(() => {
     if (!selectedFindingId) return;
@@ -241,31 +249,27 @@ export function DesignAssistantPanel({
     }
   }, [selection, findings, selectedFindingId, doc.nodes, doc.edges, doc.boundaries]);
 
-  const focusReference = (reference: AssistantReference, findingId?: string) => {
+  const focusReference = (reference: AssistantReference, trigger: HTMLButtonElement, source?: ReviewSource) => {
     if (!referenceExists(reference)) {
       setError("This referenced element is no longer in the model. Run AI Analysis again to refresh the findings.");
       return;
     }
-    const scenarios = doc.scenarios.filter((scenario) =>
-      (reference.kind === "node" ? scenario.nodeIds
-        : reference.kind === "edge" ? scenario.edgeIds : scenario.boundaryIds).includes(reference.id));
-    const scenario = scenarios.find((candidate) => candidate.id === activeScenario?.id) ?? scenarios[0];
-    setActiveScenarioId(scenario?.id ?? null);
-    setSelection({ kind: reference.kind, id: reference.id });
-    setFocusTarget({ kind: reference.kind, id: reference.id });
-    setSelectedFindingId(findingId ?? null);
+    if (visitElement(reference, { source, trigger })) {
+      setSelectedFindingId(source?.kind === "finding" ? source.id : null);
+    }
   };
 
-  const acceptAsIssue = (finding: AssistantFinding) => {
-    const target = finding.references.find(
-      (reference) => (reference.kind === "node" || reference.kind === "edge") && referenceExists(reference),
-    );
-    if (!target || (target.kind !== "node" && target.kind !== "edge")) return;
+  const acceptAsIssue = (finding: AssistantFinding, trigger: HTMLButtonElement) => {
+    const target = navigationTargets.get(finding.id)?.issue;
+    if (!target || (target.kind !== "node" && target.kind !== "edge") || !referenceExists(target)) {
+      setError("The original issue target is no longer available. Run AI Analysis again before creating an issue.");
+      return;
+    }
     if (assistantAnalysis && !doc.scenarios.some(scenario => scenario.id === assistantAnalysis.scenarioId)) {
       setError("The analyzed scenario no longer exists. Run AI Analysis again before creating an issue.");
       return;
     }
-    addIssue(
+    const created = addIssue(
       target.kind,
       target.id,
       assistantAnalysis ? [assistantAnalysis.scenarioId] : activeScenario ? [activeScenario.id] : [],
@@ -275,13 +279,13 @@ export function DesignAssistantPanel({
       finding.guidanceReferences,
     );
     setAcceptedFindingIds((current) => new Set(current).add(finding.id));
-    openInspector("issues");
+    visitRecord({ kind: "issue", id: created.id }, trigger, { kind: "finding", id: finding.id });
   };
 
-  const acceptAsWorkItem = (finding: AssistantFinding) => {
-    createWorkItem(workItemFromFinding(finding, assistantAnalysis));
+  const acceptAsWorkItem = (finding: AssistantFinding, trigger: HTMLButtonElement) => {
+    const created = createWorkItem(workItemFromFinding(finding, assistantAnalysis));
     setAcceptedFindingIds((current) => new Set(current).add(finding.id));
-    openInspector("work");
+    visitRecord({ kind: "work", id: created.id }, trigger, { kind: "finding", id: finding.id });
   };
 
   const runRequest = async (requestMode: AssistantMode, prompt: string) => {
@@ -322,6 +326,8 @@ export function DesignAssistantPanel({
           },
         ]);
       } else {
+        endReviewNavigation("assistant", "The AI review changed. Its previous return context is no longer available.");
+        setNavigationTargets(findingNavigationTargets(response.findings, doc));
         setFindings(response.findings);
         setAssistantAnalysis({
           documentSessionId, scenarioId: requestedScenario.id, scenarioName: requestedScenario.name,
@@ -413,6 +419,7 @@ export function DesignAssistantPanel({
             role="tab"
             aria-selected={mode === candidate}
             onClick={() => {
+              endReviewNavigation();
               if (analysisRoot.current) modeScroll.current[mode] = analysisRoot.current.scrollTop;
               setMode(candidate);
             }}
@@ -483,6 +490,8 @@ export function DesignAssistantPanel({
             {messages.map((message) => (
               <article
                 key={message.id}
+                data-review-kind="message"
+                data-review-id={message.id}
                 className={`ps-assistant-message is-${message.role}`}
               >
                 <strong>
@@ -502,8 +511,10 @@ export function DesignAssistantPanel({
                         key={`${reference.kind}:${reference.id}`}
                         type="button"
                         disabled={!referenceExists(reference)}
-                        title={!referenceExists(reference) ? "Referenced element is no longer in the model" : undefined}
-                        onClick={() => focusReference(reference)}
+                        data-reference-kind={reference.kind}
+                        data-reference-id={reference.id}
+                        title={!referenceExists(reference) ? "Referenced element is no longer in the model" : `${reference.kind}: ${reference.id}`}
+                        onClick={event => focusReference(reference, event.currentTarget, { kind: "message", id: message.id })}
                       >
                         Focus {reference.label}
                       </button>
@@ -623,7 +634,7 @@ export function DesignAssistantPanel({
                       type="button"
                       disabled={!referenceExists(step)}
                       title={!referenceExists(step) ? "Referenced element is no longer in the model" : undefined}
-                      onClick={() => focusReference(step)}
+                      onClick={event => focusReference(step, event.currentTarget)}
                     >
                       {step.label || step.kind}
                     </button>
@@ -657,18 +668,21 @@ export function DesignAssistantPanel({
             <div className="ps-assistant-findings" aria-live="polite">
               <h3>AI findings <span>{findings.length}</span></h3>
               {findings.map((finding, index) => {
-                const target = finding.references.find(referenceExists);
+                const originalTarget = navigationTargets.get(finding.id)?.focus;
+                const target = originalTarget && referenceExists(originalTarget) ? originalTarget : undefined;
+                const issueTarget = navigationTargets.get(finding.id)?.issue;
                 const selected = finding.id === selectedFindingId;
                 return (
-                  <article key={finding.id} data-finding-id={finding.id} className={`ps-assistant-finding${selected ? " ps-assistant-finding-selected" : ""}`}>
+                  <article key={finding.id} data-finding-id={finding.id} data-review-kind="finding" data-review-id={finding.id}
+                    className={`ps-assistant-finding${selected ? " ps-assistant-finding-selected" : ""}`}>
                     <button
                       type="button"
                       className="ps-assistant-finding-target"
                       aria-label={`Select finding: ${finding.title}`}
                       aria-pressed={selected}
                       disabled={!target}
-                      onClick={() => target && focusReference(target, finding.id)}
-                      title={target ? `Focus ${target.label}` : "No available diagram reference"}
+                      onClick={event => target && focusReference(target, event.currentTarget, { kind: "finding", id: finding.id })}
+                      title={target ? `Focus ${target.label} (${target.kind}: ${target.id})` : "No available diagram reference"}
                     >
                       <span className="ps-assistant-finding-heading">
                         <span className={`is-${finding.severity}`}>{finding.severity}</span>
@@ -709,11 +723,22 @@ export function DesignAssistantPanel({
                       </fieldset>
                     </details>
                     {!target && <p className="ps-assistant-reference-unavailable">No available diagram reference for this finding.</p>}
+                    {finding.references.length > 1 && <div className="ps-assistant-actions" aria-label="Exact diagram references">
+                      {finding.references.map(reference => (
+                        <button key={`${reference.kind}:${reference.id}`} type="button"
+                          data-reference-kind={reference.kind} data-reference-id={reference.id}
+                          disabled={!referenceExists(reference)}
+                          title={referenceExists(reference) ? `${reference.kind}: ${reference.id}` : "Referenced element is no longer in the model"}
+                          onClick={event => focusReference(reference, event.currentTarget, { kind: "finding", id: finding.id })}>
+                          Focus {reference.label} ({reference.kind}: {reference.id})
+                        </button>
+                      ))}
+                    </div>}
                     <div className="ps-assistant-actions">
                       {target && (
                         <button
                           type="button"
-                          onClick={() => focusReference(target, finding.id)}
+                          onClick={event => focusReference(target, event.currentTarget, { kind: "finding", id: finding.id })}
                         >
                           Focus
                         </button>
@@ -722,19 +747,16 @@ export function DesignAssistantPanel({
                         type="button"
                         disabled={
                           acceptedFindingIds.has(finding.id) ||
-                          !finding.references.some(
-                            (reference) =>
-                              (reference.kind === "node" || reference.kind === "edge") && referenceExists(reference),
-                          )
+                          !issueTarget || !referenceExists(issueTarget)
                         }
-                        onClick={() => acceptAsIssue(finding)}
+                        onClick={event => acceptAsIssue(finding, event.currentTarget)}
                       >
                         Create issue
                       </button>
                       <button
                         type="button"
                         disabled={acceptedFindingIds.has(finding.id)}
-                        onClick={() => acceptAsWorkItem(finding)}
+                        onClick={event => acceptAsWorkItem(finding, event.currentTarget)}
                       >
                         Create work item
                       </button>

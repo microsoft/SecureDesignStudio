@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { useUiShell, type InspectorTab } from "../uiShell";
+import { inspectorViewLabels, useReviewNavigation, useReviewNavigationLifecycle } from "../reviewNavigation";
 import { AllCommentsPanel } from "./AllCommentsPanel";
 import { AllDeviationsPanel } from "./AllDeviationsPanel";
 import { AllIssuesPanel } from "./AllIssuesPanel";
@@ -71,7 +72,13 @@ export function SidePanel() {
     setInspectorWidth,
     setInspectorPinned,
     setInspectorActiveTab,
+    focusInspectorTab,
+    reviewNavigation,
   } = useUiShell();
+  const { back, dismiss } = useReviewNavigation();
+  useReviewNavigationLifecycle();
+  const previousNavigationRef = useRef(reviewNavigation.revision);
+  const returnPoint = reviewNavigation.returns.at(-1);
   const previousSelectionRef = useRef<string | null | undefined>(undefined);
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -80,8 +87,8 @@ export function SidePanel() {
   tabsRef.current = new Map();
 
   useEffect(() => {
-    if (inspectorActiveTab === "assistant" && window.innerWidth <= 640) setInspectorExpanded(true);
-  }, [inspectorActiveTab]);
+    if ((inspectorActiveTab === "assistant" || returnPoint) && window.innerWidth <= 640) setInspectorExpanded(true);
+  }, [inspectorActiveTab, returnPoint]);
 
   const selectionKey = selection
     ? selection.kind === "waypoint"
@@ -92,6 +99,10 @@ export function SidePanel() {
   useEffect(() => {
     const previous = previousSelectionRef.current;
     previousSelectionRef.current = selectionKey;
+    if (previousNavigationRef.current !== reviewNavigation.revision) {
+      previousNavigationRef.current = reviewNavigation.revision;
+      return;
+    }
     if (
       previous !== undefined &&
       previous !== selectionKey &&
@@ -102,11 +113,9 @@ export function SidePanel() {
     ) {
       const active = inspectorHostRef.current?.ownerDocument.activeElement;
       const focusWasInInspector = !!active && inspectorHostRef.current?.contains(active);
-      setInspectorActiveTab("properties");
+      setInspectorActiveTab("properties", { automatic: true });
       if (focusWasInInspector) {
-        requestAnimationFrame(() =>
-          tabsRef.current.get("properties")?.focus(),
-        );
+        focusInspectorTab("properties");
       }
     }
   }, [
@@ -115,6 +124,7 @@ export function SidePanel() {
     inspectorActiveTab,
     inspectorPinned,
     setInspectorActiveTab,
+    reviewNavigation.revision,
   ]);
 
   useEffect(() => {
@@ -170,13 +180,13 @@ export function SidePanel() {
             tabsRef.current.get(inspectorActiveTab)?.focus({ preventScroll: true }),
           );
         }
-      } else if (inspectorActiveTab === "assistant") {
+      } else if (inspectorActiveTab === "assistant" || returnPoint) {
         setInspectorExpanded(true);
       }
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [inspectorWidth, inspectorActiveTab, setInspectorWidth]);
+  }, [inspectorWidth, inspectorActiveTab, setInspectorWidth, returnPoint]);
 
   useEffect(() => {
     if (!inspectorVisible) return;
@@ -445,6 +455,23 @@ export function SidePanel() {
           </button>
         ))}
       </div>
+      {returnPoint && (
+        <div className="ps-review-return" aria-label="Review return navigation">
+          <button type="button" onClick={back}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M7 3 2 8l5 5M2 8h12" />
+            </svg>
+            Back to {inspectorViewLabels[returnPoint.tab]}
+          </button>
+          <button type="button" className="ps-review-return-dismiss" aria-label="Dismiss return navigation"
+            title="Stay here and dismiss return navigation" onClick={dismiss}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="m4 4 8 8m0-8-8 8" />
+            </svg>
+          </button>
+        </div>
+      )}
+      {reviewNavigation.notice && <p className="ps-review-navigation-notice" role="status">{reviewNavigation.notice}</p>}
       <div
         id="ps-inspector-panel"
         className={`ps-inspector-panel${
@@ -456,6 +483,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-properties"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-properties"
           hidden={inspectorActiveTab !== "properties"}
         >
@@ -464,6 +492,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-edges"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-edges"
           hidden={inspectorActiveTab !== "edges"}
         >
@@ -472,6 +501,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-issues"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-issues"
           hidden={inspectorActiveTab !== "issues"}
         >
@@ -491,6 +521,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-comments"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-comments"
           hidden={inspectorActiveTab !== "comments"}
         >
@@ -500,6 +531,7 @@ export function SidePanel() {
           <section
             id="ps-inspector-panel-deviations"
             role="tabpanel"
+            tabIndex={-1}
             aria-labelledby="ps-inspector-tab-deviations"
             hidden={inspectorActiveTab !== "deviations"}
           >
@@ -510,6 +542,7 @@ export function SidePanel() {
           <section
             id="ps-inspector-panel-changes"
             role="tabpanel"
+            tabIndex={-1}
             aria-labelledby="ps-inspector-tab-changes"
             hidden={inspectorActiveTab !== "changes"}
           >
@@ -519,6 +552,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-data"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-data"
           hidden={inspectorActiveTab !== "data"}
         >
@@ -527,6 +561,7 @@ export function SidePanel() {
         <section
           id="ps-inspector-panel-work"
           role="tabpanel"
+          tabIndex={-1}
           aria-labelledby="ps-inspector-tab-work"
           hidden={inspectorActiveTab !== "work"}
         >
