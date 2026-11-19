@@ -13,7 +13,7 @@ const { diffDocuments } = await import("../../src/diff.ts");
 const { buildReviewReportHtml } = await import("../../src/reportExport.ts");
 const { buildDfdReviewContext } = await import("../../src/dfdReviewContext.ts");
 const { IssueManager } = await import("../../src/IssueManager.ts");
-const { saveAutosave, loadAutosaveRaw } = await import("../../src/autosave.ts");
+const { createAutosaveSession, saveAutosave, loadAutosaveRaw } = await import("../../src/autosave.ts");
 const { capturePristineHtml, buildStandaloneHtml } = await import("../../src/embeddedDoc.ts");
 const { createYShape } = await import("../../src/collab/yDoc.ts");
 const { reconcileLocalToY, buildDocFromY } = await import("../../src/collab/reconcile.ts");
@@ -65,7 +65,9 @@ function readStore(showBoundary = false) {
 }
 
 function save(doc, past = [], future = []) {
-  saveAutosave({ doc, past, future, view: { activeScenarioId: doc.scenarios[0].id, filter: {} } });
+  const session = createAutosaveSession(null);
+  loadAutosaveRaw(session);
+  saveAutosave({ doc, past, future, view: { activeScenarioId: doc.scenarios[0].id, filter: {} } }, session);
 }
 
 test("boundary network: four optional exact strings, no network grammar or imposed text limit", () => {

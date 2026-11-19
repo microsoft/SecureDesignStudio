@@ -1947,7 +1947,10 @@ test("regression: invalid catalog snapshots reject atomically and recovery never
     await page.waitForFunction(() => window.catalogImportRejected === true);
     assert.deepEqual((await exportModel(page)).doc, before.doc);
     const corrupt = JSON.stringify({ version: 1, doc: invalid.doc, past: [], future: [], view: invalid.view });
-    await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: autosaveKey, value: corrupt });
+    await page.addInitScript(({ key, value }) => {
+      sessionStorage.removeItem(key);
+      localStorage.setItem(key, value);
+    }, { key: autosaveKey, value: corrupt });
     await page.reload();
     await page.getByRole("alert").filter({ hasText: "Saved diagram recovery is paused" }).waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
@@ -2112,6 +2115,85 @@ test("regression: editing, undo, redo, autosave, and reload retain the current m
     await node(page, "n_client").waitFor({ state: "visible" });
     assert.match(await node(page, "n_client").innerText(), /Edited client/);
     assert.equal(await scenario(page).inputValue(), "s_primary");
+  });
+});
+
+test("regression: autosave reports failed storage writes and clears the warning after a successful retry", async () => {
+  await harness.run("regression: autosave storage failure", async ({ page }) => {
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || "null")?.doc.nodes
+      .some(item => item.id === "n_client"), autosaveKey);
+    await page.evaluate(key => {
+      const original = Storage.prototype.setItem;
+      window.restoreAutosaveStorage = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = function(k, value) {
+        if (k === key) throw new DOMException("Synthetic full storage", "QuotaExceededError");
+        return original.call(this, k, value);
+      };
+    }, autosaveKey);
+    await node(page, "n_client").click();
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("Not saved yet");
+    await page.getByRole("alert").filter({ hasText: "Autosave could not be updated" }).waitFor();
+    assert.notEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      "Not saved yet");
+    await page.evaluate(() => window.restoreAutosaveStorage());
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("Saved after retry");
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || "null")?.doc.nodes
+      .some(item => item.title === "Saved after retry"), autosaveKey);
+    assert.equal(await page.getByRole("alert").filter({ hasText: /autosave/i }).count(), 0);
+    await page.reload();
+    await node(page, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), /Saved after retry/);
+  });
+});
+
+test("regression: stale-tab lifecycle flushes preserve both tabs without overwriting shared recovery", async () => {
+  await harness.run("regression: isolated tab recovery", async ({ page, context }) => {
+    const waitTitle = (target, title, store = "localStorage") => target.waitForFunction(({ key, title, store }) =>
+      JSON.parse(window[store].getItem(key) || "null")?.doc.nodes.some(item => item.title === title),
+    { key: autosaveKey, title, store });
+    await waitTitle(page, "Client");
+    const second = await context.newPage();
+    await second.goto(page.url());
+    await node(second, "n_client").click();
+    await second.getByRole("textbox", { name: "Title", exact: true }).fill("Second tab edit");
+    await waitTitle(second, "Second tab edit");
+    await node(page, "n_client").click();
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("First tab edit");
+    await waitTitle(page, "First tab edit", "sessionStorage");
+    await page.getByRole("alert").filter({ hasText: "Another tab changed shared autosave" }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      "Second tab edit");
+    await page.reload();
+    await second.reload();
+    await node(page, "n_client").waitFor();
+    await node(second, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), /First tab edit/);
+    assert.match(await node(second, "n_client").innerText(), /Second tab edit/);
+    await second.close();
+  });
+});
+
+test("regression: continuous editing checkpoints within the selected autosave interval", async () => {
+  await harness.run("regression: bounded autosave scheduling", async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem("ps-ui-preferences-v2", JSON.stringify({ autosaveIntervalMs: 2000 })));
+    await page.reload();
+    await node(page, "n_client").click();
+    const field = page.getByRole("textbox", { name: "Title", exact: true });
+    const start = Date.now();
+    let count = 0;
+    while (Date.now() - start < 3000) {
+      await field.fill(`Continuous autosave ${++count}`);
+      await page.waitForTimeout(100);
+    }
+    assert.match(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      /^Continuous autosave /);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const expected = `Continuous autosave ${count}`;
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey), expected);
+    await page.reload();
+    await node(page, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), new RegExp(expected));
   });
 });
 

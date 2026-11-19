@@ -22,7 +22,7 @@ import type { ChangeItem, ChangeTarget } from "./diff";
 import type { AssistantAnalysisSnapshot, AssistantFinding } from "./designAssistant";
 import { propagateScenarioEdgeData } from "./dataPropagation";
 import { applyDesignerResult, buildDesignerContext, buildDesignPlanContext, designerDocumentKey, describeDesignerChanges, type DesignRequestSnapshot } from "./threatModelDesigner";
-import { loadAutosaveRaw, saveAutosave } from "./autosave";
+import { createAutosaveSession, loadAutosaveRaw, saveAutosave } from "./autosave";
 import { useUiShell } from "./uiShell";
 import { resetDetailsTab } from "./components/detailsTabStore";
 import type { ParsedPrivExp } from "./privacyManagerImport";
@@ -1009,6 +1009,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authenticationLibrary, setAuthenticationLibraryState] = useState(libraryInitial.methods);
   const [authenticationStorageError, setAuthenticationStorageError] = useState(libraryInitial.error);
   const [catalogSnapshotError, setCatalogSnapshotError] = useState<string | null>(null);
+  const autosaveSession = useMemo(() => createAutosaveSession(readEmbeddedDoc()), []);
   const libraryRef = useRef(authenticationLibrary);
   const setAuthenticationLibrary = useCallback((next: AuthTypeDef[]) => {
     libraryRef.current = next;
@@ -1021,10 +1022,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   //
   // Standalone-HTML exports embed the document inside the file via
   // `<script type="application/json" id="ps-embedded-doc">…</script>`.
-  // When such a script is present, we seed FROM IT instead of from
-  // autosave so opening an exported file is a self-contained
-  // experience. Autosave still picks up subsequent edits per-origin
-  // (file:// URLs get a localStorage partition per file).
+  // Only recovery associated with this exact embedded seed may override it.
+  // Tab-local recovery wins over the origin's shared recovery checkpoint.
   const initial = useMemo(() => {
     const documentRecoveryFailure = (value: unknown, history: unknown[] = []) => {
       if (!value || typeof value !== "object") return null;
@@ -1105,7 +1104,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
 
     const embedded = unwrap(readEmbeddedDoc());
-    if (embedded) {
+    const raw = loadAutosaveRaw(autosaveSession);
+    if (embedded && !raw) {
       const failure = documentRecoveryFailure(embedded.doc);
       if (failure) return failure;
       const doc = safeNorm(embedded.doc);
@@ -1114,7 +1114,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const raw = loadAutosaveRaw();
     if (!raw) return null;
     const failure = documentRecoveryFailure(raw.doc, [...raw.past, ...raw.future]);
     if (failure) return failure;
@@ -1739,10 +1738,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // -------- Autosave --------
   //
-  // Persist {doc, past, future, view} to localStorage with a debounce so
-  // rapid edits coalesce. The cleanup-as-debounce pattern can't guarantee
-  // the timeout fires before tab close, so we also flush synchronously on
-  // pagehide and when the document becomes hidden.
+  // Coalesce edits without postponing the checkpoint during continuous input.
+  // Lifecycle flushes also capture the latest queued document synchronously.
   const flushAutosave = useCallback(() => {
     if (documentRecoveryError) return;
     const b = documentHistoryRef.current;
@@ -1761,8 +1758,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCatalogSnapshotError(`Autosave was not updated: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    setCatalogSnapshotError(null);
-    saveAutosave({
+    const error = saveAutosave({
       doc: savedDoc,
       past: savedPast,
       future: savedFuture,
@@ -1775,12 +1771,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         future: b.future.map(entry => entry.classificationLibrary ?? null),
       },
       view: { activeScenarioId: activeScenarioIdRef.current, filter: filterRef.current },
-    });
+    }, autosaveSession);
+    setCatalogSnapshotError(error);
   }, [documentRecoveryError]);
 
+  const autosaveTimer = useRef<number | null>(null);
   useEffect(() => {
-    const handle = window.setTimeout(flushAutosave, autosaveIntervalMs);
-    return () => window.clearTimeout(handle);
+    if (autosaveTimer.current !== null) return;
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      flushAutosave();
+    }, autosaveIntervalMs);
   }, [doc, past, future, activeScenarioId, filter, flushAutosave, autosaveIntervalMs]);
 
   useEffect(() => {
@@ -1791,6 +1792,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener("pagehide", flushAutosave);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
       window.removeEventListener("pagehide", flushAutosave);
       document.removeEventListener("visibilitychange", onVisibility);
     };

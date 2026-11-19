@@ -46,6 +46,7 @@ export async function withAtomicStore(page, exercise) {
     const { CORE_LIBRARIES } = await import("/src/libraries/registry.ts");
     const { withCatalogDefinitions } = await import("/src/catalogDefinitions.ts");
     const doc = withCatalogDefinitions(normalizeDoc(input.doc));
+    sessionStorage.removeItem(key);
     localStorage.setItem(key, JSON.stringify({ version: 1, doc, view: input.view, past: [], future: [] }));
     window.atomicStoreCommits = 0;
     window.atomicScopeSession = Symbol("atomic-scope-session");

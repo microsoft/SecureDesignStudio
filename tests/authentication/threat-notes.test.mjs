@@ -10,7 +10,7 @@ import { documentFixture } from "./catalog-fixtures.mjs";
 const { normalizeDoc, StoreProvider, useStore } = await import("../../src/store.tsx");
 const { UiShellProvider } = await import("../../src/uiShell.tsx");
 const { removeThreatNoteScenario } = await import("../../src/threatNotes.ts");
-const { saveAutosave, loadAutosaveRaw } = await import("../../src/autosave.ts");
+const { createAutosaveSession, saveAutosave, loadAutosaveRaw } = await import("../../src/autosave.ts");
 const { capturePristineHtml, buildStandaloneHtml } = await import("../../src/embeddedDoc.ts");
 const { parseTm7 } = await import("../../src/tm7Import.ts");
 const { prepareTm7Export } = await import("../../src/tm7Export.ts");
@@ -89,7 +89,9 @@ function readStore() {
   return store;
 }
 function save(doc, past = [], future = []) {
-  saveAutosave({ doc, past, future, view: { activeScenarioId: doc.scenarios[0].id, filter: {} } });
+  const session = createAutosaveSession(null);
+  loadAutosaveRaw(session);
+  saveAutosave({ doc, past, future, view: { activeScenarioId: doc.scenarios[0].id, filter: {} } }, session);
 }
 
 test("threat notes: real store authoring permits blanks, rejects invalid edits and never promotes ordinary issues", t => {

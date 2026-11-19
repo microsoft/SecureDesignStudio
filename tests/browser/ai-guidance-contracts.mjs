@@ -163,7 +163,10 @@ export function registerAiGuidanceContracts({ getHarness, exportModel }) {
       const corruptDoc = structuredClone(before.doc);
       corruptDoc.nodeTypes.find(type => type.id === "nt_browser").definition.aiDesignGuidance = null;
       const corrupt = JSON.stringify({ version: 1, doc: clear.doc, past: [corruptDoc], future: [], view: before.view });
-      await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: autosaveKey, value: corrupt });
+      await page.addInitScript(({ key, value }) => {
+        sessionStorage.removeItem(key);
+        localStorage.setItem(key, value);
+      }, { key: autosaveKey, value: corrupt });
       await page.reload();
       await page.getByRole("alert").filter({ hasText: "Saved diagram recovery is paused" }).waitFor();
       await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));

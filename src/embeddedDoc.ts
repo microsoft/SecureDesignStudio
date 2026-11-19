@@ -13,10 +13,10 @@
 //   3. Triggers a browser download of the result as a `.html` file.
 //
 // On startup, when the page boots, `readEmbeddedDoc()` looks for that
-// same script element and returns the parsed PsDocument so the store
-// can seed itself from it (instead of from autosave). This makes the
-// exported file a self-contained, double-clickable view of the model
-// that round-trips through the same export path.
+// same script element and returns its parsed JSON. The store restores only
+// autosave matching that exact seed, otherwise opening the embedded model.
+// The exported file remains a self-contained, double-clickable snapshot;
+// subsequent browser recovery does not rewrite the file.
 
 import type { PsDocument } from "./types";
 

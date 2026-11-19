@@ -100,6 +100,12 @@ coverage, and verify export leaves the native document unchanged.
 Additional cases cover negative/offscreen bounds, boundary and annotation
 text, current filters, zoom-independent report images, and export while offline.
 
+Autosave contracts cover tab-isolated refresh recovery, stale-tab shared-write
+protection, visible storage failures and retry, and bounded checkpoints during
+continuous editing. The standalone production contract also edits and reloads an
+actual exported HTML file while rejecting unrelated shared recovery. These use
+synthetic models and isolated browser storage, not real diagrams or cloud rooms.
+
 ### Explicit localhost ADO connection
 
 `npm run test:ado:local` runs separately from the browser union because it owns
