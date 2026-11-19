@@ -27,6 +27,7 @@ export interface YShape {
   data: Y.Map<Y.Map<unknown>>;
   comments: Y.Map<Y.Map<unknown>>;
   issues: Y.Map<Y.Map<unknown>>;
+  findings: Y.Map<Y.Map<unknown>>;
   deviations: Y.Map<Y.Map<unknown>>;
   workItems: Y.Map<Y.Map<unknown>>;
   nodeTypes: Y.Map<Y.Map<unknown>>;
@@ -48,6 +49,7 @@ export function createYShape(ydoc?: Y.Doc): YShape {
     data: doc.getMap<Y.Map<unknown>>("data"),
     comments: doc.getMap<Y.Map<unknown>>("comments"),
     issues: doc.getMap<Y.Map<unknown>>("issues"),
+    findings: doc.getMap<Y.Map<unknown>>("findings"),
     deviations: doc.getMap<Y.Map<unknown>>("deviations"),
     workItems: doc.getMap<Y.Map<unknown>>("workItems"),
     nodeTypes: doc.getMap<Y.Map<unknown>>("nodeTypes"),
@@ -68,6 +70,8 @@ export function isYShapeEmpty(shape: YShape): boolean {
     shape.data.size === 0 &&
     shape.comments.size === 0 &&
     shape.issues.size === 0 &&
+    shape.findings.size === 0 &&
+    !shape.meta.has("findingAnalysis") &&
     shape.deviations.size === 0 &&
     shape.workItems.size === 0 &&
     shape.authenticationDefinitions.size === 0 &&

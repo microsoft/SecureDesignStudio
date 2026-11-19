@@ -83,6 +83,167 @@ async function settleNavigationNodes(page) {
   }, autosaveKey), "all fixture geometry measured before observing navigation");
 }
 
+test("regression: saved findings resolve, reopen and delete with native and history parity", async () => {
+  await harness.run("regression: saved finding lifecycle", async ({ page, observations }) => {
+    const input = modelFixture();
+    input.doc.findingAnalysis = {
+      scenarioId: "s_primary", scenarioName: "Primary", createdAt: 1234, answer: "Saved synthetic review.",
+    };
+    input.doc.findings = [
+      { kind: "node", id: "n_client", label: "Client" },
+      { kind: "edge", id: "e_request", label: "Request" },
+      { kind: "boundary", id: "b_missing", label: "Removed boundary" },
+      null,
+    ].map((reference, index) => ({
+      id: `f_lifecycle_${index}`, title: "Repeated finding title", category: "Synthetic",
+      severity: ["critical", "high", "medium", "low"][index], status: "Active",
+      rationale: `Complete finding ${index}`, recommendation: "Review this control.",
+      references: reference ? [reference] : [],
+      ...(reference ? { focusReference: reference } : {}),
+      ...(reference && reference.kind !== "boundary" ? { issueReference: reference } : {}),
+    }));
+    const upload = model => page.locator("#ps-file-open-input").setInputFiles({
+      name: "saved-findings.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
+    });
+    const saved = () => page.evaluate(key => {
+      window.dispatchEvent(new Event("pagehide"));
+      return JSON.parse(localStorage.getItem(key));
+    }, autosaveKey);
+    const card = id => page.locator(`[data-finding-id="${id}"]`);
+    await upload(input);
+    await settleNavigationNodes(page);
+    await scenario(page).selectOption("s_primary");
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 4), "saved findings loaded");
+    const before = (await saved()).doc;
+    for (const finding of input.doc.findings) {
+      await card(finding.id).getByRole("button", { name: "Resolve", exact: true }).click();
+      await card(finding.id).getByText("Resolved", { exact: true }).waitFor();
+      assert.equal((await saved()).doc.findings.find(item => item.id === finding.id).status, "Resolved");
+      await card(finding.id).getByRole("button", { name: "Reopen", exact: true }).click();
+      assert.deepEqual((await saved()).doc, before, "Reopen changes only the chosen finding's review status");
+    }
+    const first = card("f_lifecycle_0");
+    await first.getByRole("button", { name: "Resolve", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await first.getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    const resolved = (await saved()).doc;
+    assert.deepEqual(resolved, { ...before, findings: before.findings.map((item, index) =>
+      index === 0 ? { ...item, status: "Resolved" } : item) });
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    assert.deepEqual((await saved()).doc, before);
+    await page.getByRole("button", { name: /^Redo/ }).click();
+    assert.deepEqual((await saved()).doc, resolved);
+
+    let confirmDeletion = false;
+    const dialogs = [], unexpectedDialogs = [];
+    page.removeAllListeners("dialog");
+    page.on("dialog", async dialog => {
+      if (dialog.type() !== "confirm" || !dialog.message().startsWith("Delete this finding?")) {
+        unexpectedDialogs.push(dialog.message());
+        await dialog.dismiss();
+        return;
+      }
+      dialogs.push(dialog.message());
+      await (confirmDeletion ? dialog.accept() : dialog.dismiss());
+    });
+    const beforeCancel = await saved();
+    await first.getByRole("button", { name: "Delete", exact: true }).click();
+    const cancelled = await saved();
+    assert.deepEqual(cancelled.doc, beforeCancel.doc);
+    assert.deepEqual(cancelled.past, beforeCancel.past, "Cancel adds no history");
+    confirmDeletion = true;
+    await first.getByRole("button", { name: "Delete", exact: true }).click();
+    await first.waitFor({ state: "detached" });
+    const deleted = (await saved()).doc;
+    assert.deepEqual(deleted, { ...resolved, findings: resolved.findings.slice(1) });
+    await until(() => card("f_lifecycle_1").getByRole("button", { name: "Resolve", exact: true })
+      .evaluate(control => control === control.ownerDocument.activeElement), "delete restores focus to the next finding");
+    assert.equal(await page.locator("#ps-inspector-tab-assistant .ps-inspector-tab-count").textContent(), "3");
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    assert.deepEqual((await saved()).doc, resolved, "Undo restores the complete deleted finding");
+    await page.getByRole("button", { name: /^Redo/ }).click();
+    assert.deepEqual((await saved()).doc, deleted);
+    const exported = await exportModel(page);
+    assert.deepEqual(exported.doc, deleted);
+    await upload(exported);
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 3), "findings reopen");
+    assert.deepEqual((await saved()).doc, deleted);
+    await page.reload();
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 3), "findings recover from autosave");
+    assert.deepEqual((await saved()).doc, deleted);
+    assert.equal(dialogs.length, 2);
+    assert.deepEqual(unexpectedDialogs, []);
+    observations.lifecycle = "Every reference kind, including missing/no references, supports Resolve/Reopen and confirmed Delete.";
+    observations.persistence = "Exact model Undo/Redo, native Save/Open and autosave reload; no AI request.";
+  });
+});
+
+test("usability: finding lifecycle actions remain keyboard reachable in narrow and popup inspectors", async () => {
+  await harness.run("usability: finding lifecycle focus and popup ownership", async ({ page, context, observations }) => {
+    const input = modelFixture();
+    input.doc.findings = Array.from({ length: 3 }, (_, index) => ({
+      id: `f_keyboard_${index}`, title: `Unavailable finding ${index + 1}`, category: "Synthetic",
+      severity: "high", status: "Active", rationale: "Missing references do not prevent review.",
+      recommendation: "Confirm the control.", references: [],
+    }));
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "finding-actions.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(input)),
+    });
+    await page.setViewportSize({ width: 320, height: 480 });
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    const last = page.locator('[data-finding-id="f_keyboard_2"]');
+    for (const name of ["Resolve", "Delete"]) {
+      const control = last.getByRole("button", { name, exact: true });
+      await control.scrollIntoViewIfNeeded();
+      const bounds = await control.boundingBox();
+      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 321, `${name} fits the narrow inspector`);
+    }
+    await last.getByRole("button", { name: "Resolve", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    const reopen = last.getByRole("button", { name: "Reopen", exact: true });
+    assert.equal(await reopen.evaluate(control => control === control.ownerDocument.activeElement), true);
+    await page.keyboard.press("Enter");
+    assert.equal(await last.getByRole("button", { name: "Resolve", exact: true }).isEnabled(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    await page.setViewportSize({ width: 1366, height: 900 });
+    const popupEvent = context.waitForEvent("page");
+    await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("window");
+    const popup = await popupEvent;
+    await popup.setViewportSize({ width: 320, height: 480 });
+    const confirmations = [], faults = [];
+    popup.on("pageerror", error => faults.push(error.message));
+    popup.on("dialog", async dialog => {
+      confirmations.push({ type: dialog.type(), message: dialog.message() });
+      await dialog.accept();
+    });
+    for (let index = 0; index < 3; index++) {
+      const row = popup.locator(`[data-finding-id="f_keyboard_${index}"]`);
+      await row.getByRole("button", { name: "Delete", exact: true }).focus();
+      await popup.keyboard.press("Enter");
+      await row.waitFor({ state: "detached" });
+      const focus = index < 2
+        ? popup.locator(`[data-finding-id="f_keyboard_${index + 1}"]`).getByRole("button", { name: "Resolve", exact: true })
+        : popup.locator("[data-findings-heading]");
+      await until(() => focus.evaluate(control => control === control.ownerDocument.activeElement), "stable focus after finding deletion");
+    }
+    await popup.getByText("No saved AI findings.", { exact: true }).waitFor();
+    assert.equal(confirmations.length, 3);
+    assert.ok(confirmations.every(dialog => dialog.type === "confirm" && dialog.message.startsWith("Delete this finding?")));
+    assert.deepEqual(faults, []);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey);
+    assert.deepEqual(saved.findings, []);
+    assert.equal(saved.nodes.length, input.doc.nodes.length, "Finding actions never delete diagram targets");
+    await popup.close();
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 1), "Undo restores the last finding after docking");
+    observations.accessibility = "320px controls, keyboard resolve/reopen/delete, popup-owned confirmation and deterministic empty-list focus.";
+  });
+});
+
 test("regression: exact review target and Back retain the originating context", async () => {
   await harness.run("regression: exact review target and Back", async ({ page, observations }) => {
     const input = modelFixture();
@@ -483,7 +644,7 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
     await page.getByLabel("Document status").getByText("boundaries-reopened.tma", { exact: true }).waitFor();
     await waitForMeasuredDiagram(page);
     assert.deepEqual((await savedDiagram(page)).doc, native.doc, "Native save/reopen retains boundaries, edited fields and layout");
-    assert.ok(await label.locator(".ps-edge-auth-badge").isVisible());
+    await label.locator(".ps-edge-auth-badge").waitFor({ state: "visible" });
     assert.equal(await label.locator(".ps-edge-auth-badge").innerText(), authText);
     assert.equal(await label.locator(".ps-edge-protocol-badge").innerText(), "HTTPS");
   });
@@ -1786,7 +1947,10 @@ test("regression: invalid catalog snapshots reject atomically and recovery never
     await page.waitForFunction(() => window.catalogImportRejected === true);
     assert.deepEqual((await exportModel(page)).doc, before.doc);
     const corrupt = JSON.stringify({ version: 1, doc: invalid.doc, past: [], future: [], view: invalid.view });
-    await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), { key: autosaveKey, value: corrupt });
+    await page.addInitScript(({ key, value }) => {
+      sessionStorage.removeItem(key);
+      localStorage.setItem(key, value);
+    }, { key: autosaveKey, value: corrupt });
     await page.reload();
     await page.getByRole("alert").filter({ hasText: "Saved diagram recovery is paused" }).waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
@@ -1951,6 +2115,85 @@ test("regression: editing, undo, redo, autosave, and reload retain the current m
     await node(page, "n_client").waitFor({ state: "visible" });
     assert.match(await node(page, "n_client").innerText(), /Edited client/);
     assert.equal(await scenario(page).inputValue(), "s_primary");
+  });
+});
+
+test("regression: autosave reports failed storage writes and clears the warning after a successful retry", async () => {
+  await harness.run("regression: autosave storage failure", async ({ page }) => {
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || "null")?.doc.nodes
+      .some(item => item.id === "n_client"), autosaveKey);
+    await page.evaluate(key => {
+      const original = Storage.prototype.setItem;
+      window.restoreAutosaveStorage = () => { Storage.prototype.setItem = original; };
+      Storage.prototype.setItem = function(k, value) {
+        if (k === key) throw new DOMException("Synthetic full storage", "QuotaExceededError");
+        return original.call(this, k, value);
+      };
+    }, autosaveKey);
+    await node(page, "n_client").click();
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("Not saved yet");
+    await page.getByRole("alert").filter({ hasText: "Autosave could not be updated" }).waitFor();
+    assert.notEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      "Not saved yet");
+    await page.evaluate(() => window.restoreAutosaveStorage());
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("Saved after retry");
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || "null")?.doc.nodes
+      .some(item => item.title === "Saved after retry"), autosaveKey);
+    assert.equal(await page.getByRole("alert").filter({ hasText: /autosave/i }).count(), 0);
+    await page.reload();
+    await node(page, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), /Saved after retry/);
+  });
+});
+
+test("regression: stale-tab lifecycle flushes preserve both tabs without overwriting shared recovery", async () => {
+  await harness.run("regression: isolated tab recovery", async ({ page, context }) => {
+    const waitTitle = (target, title, store = "localStorage") => target.waitForFunction(({ key, title, store }) =>
+      JSON.parse(window[store].getItem(key) || "null")?.doc.nodes.some(item => item.title === title),
+    { key: autosaveKey, title, store });
+    await waitTitle(page, "Client");
+    const second = await context.newPage();
+    await second.goto(page.url());
+    await node(second, "n_client").click();
+    await second.getByRole("textbox", { name: "Title", exact: true }).fill("Second tab edit");
+    await waitTitle(second, "Second tab edit");
+    await node(page, "n_client").click();
+    await page.getByRole("textbox", { name: "Title", exact: true }).fill("First tab edit");
+    await waitTitle(page, "First tab edit", "sessionStorage");
+    await page.getByRole("alert").filter({ hasText: "Another tab changed shared autosave" }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      "Second tab edit");
+    await page.reload();
+    await second.reload();
+    await node(page, "n_client").waitFor();
+    await node(second, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), /First tab edit/);
+    assert.match(await node(second, "n_client").innerText(), /Second tab edit/);
+    await second.close();
+  });
+});
+
+test("regression: continuous editing checkpoints within the selected autosave interval", async () => {
+  await harness.run("regression: bounded autosave scheduling", async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem("ps-ui-preferences-v2", JSON.stringify({ autosaveIntervalMs: 2000 })));
+    await page.reload();
+    await node(page, "n_client").click();
+    const field = page.getByRole("textbox", { name: "Title", exact: true });
+    const start = Date.now();
+    let count = 0;
+    while (Date.now() - start < 3000) {
+      await field.fill(`Continuous autosave ${++count}`);
+      await page.waitForTimeout(100);
+    }
+    assert.match(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey),
+      /^Continuous autosave /);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const expected = `Continuous autosave ${count}`;
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].title, autosaveKey), expected);
+    await page.reload();
+    await node(page, "n_client").waitFor();
+    assert.match(await node(page, "n_client").innerText(), new RegExp(expected));
   });
 });
 

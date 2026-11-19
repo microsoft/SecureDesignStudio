@@ -387,7 +387,7 @@ establish protocol behavior or target-node acceptance.
 
 | Surface | Support and loss boundary |
 |---|---|
-| `.tma`, autosave, embedded standalone HTML | Stable IDs and saved definitions, including any `aiDesignGuidance`, retained. Document/wrapper versions remain 1/2; `.tma` is unchanged. Embedded model takes precedence over autosave. |
+| `.tma`, autosave, embedded standalone HTML | Stable IDs and saved definitions, including any `aiDesignGuidance`, retained. Document/wrapper versions remain 1/2; `.tma` is unchanged. Embedded models accept only recovery matching their exact exported seed. |
 | Compare to previous | An authentication definition whose AI design guidance differs is reported as a changed definition; the change text names the guidance among the differing fields. |
 | Browser collaboration | Saved definitions synchronize through the existing authentication-definition Y maps, carrying the full nested guidance field, which is validated before the transaction; local library preferences do not synchronize. Test with synthetic peers; this is not live-service validation. |
 | Older readers / mixed-version rooms | Builds older than a referenced method's compatibility floor may discard its ID or definition. Builds that predate `aiDesignGuidance` may reject a definition containing it, or drop the card when re-saving. No guidance-specific minimum application version is defined, so the method-ID compatibility notice below is not assurance that a build supports guidance. Do not use them to edit these models or join their rooms. New-reader/old-file compatibility does not imply old-reader/new-file safety; older peers cannot be reliably detected or prevented. Keep an editable `.tma` backup. |

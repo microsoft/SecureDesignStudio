@@ -4,6 +4,7 @@ import type { AuthenticationType, AuthTypeDef } from "./authentication";
 import type { ProtocolId, ProtocolTypeDef } from "./protocols";
 import type { MetadataField } from "./libraries/contracts";
 import type { WorkItemSeverity, WorkItemType } from "../shared/adoContract";
+import type { AssistantAnalysisSnapshot, AssistantFinding, AssistantReference } from "./designAssistant";
 export { WORK_ITEM_SEVERITIES, WORK_ITEM_TYPES } from "../shared/adoContract";
 import productionIdentityTenants from "./data/productionIdentityTenants.json";
 import deviationTypes from "./data/deviationTypes.json";
@@ -1023,6 +1024,16 @@ export interface IssueReply {
 
 export type IssueStatus = "Active" | "Resolved";
 
+export interface PsFinding extends AssistantFinding {
+  status: IssueStatus;
+  accepted?: boolean;
+  // Capture exact targets with the analysis; deletion must not promote another reference.
+  focusReference?: AssistantReference;
+  issueReference?: AssistantReference;
+}
+
+export type PsFindingAnalysis = Omit<AssistantAnalysisSnapshot, "documentSessionId">;
+
 export const ISSUE_NOT_EVALUATED_LABELS = {
   "rule-unavailable": "Not re-evaluated: rule unavailable",
   "rule-retired": "Not re-evaluated: analyzer rule retired",
@@ -1180,6 +1191,9 @@ export interface PsDocument {
   data: PsData[];
   comments: PsComment[];
   issues: PsIssue[];
+  // Latest completed AI review. Missing in older documents; an empty list is explicit deletion.
+  findings?: PsFinding[];
+  findingAnalysis?: PsFindingAnalysis;
   deviations: PsDeviation[];
   // Catalog of security-review work items. Free-standing — not attached
   // to any node or edge. Optional in legacy docs; normalizeDoc defaults

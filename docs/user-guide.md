@@ -706,6 +706,21 @@ jumps past those controls. Chat keeps its own scrolling area and composer when
 space permits; in short panels its content scrolls together. Scroll or Tab
 through finding actions to reach the final result.
 
+Every AI finding has **Resolve** / **Reopen** and **Delete**, including findings
+with missing diagram references. Resolve records an **Active** or **Resolved**
+review decision; it does not fix the design or verify the AI's recommendation.
+Delete asks for confirmation and removes only that finding, not any Issues or
+Work items already created from it. Both actions support Undo/Redo.
+
+The completed findings, their statuses, classification and accepted-state
+feedback, and their analyzed scenario snapshot are saved with the model.
+Native Save/Open, autosave recovery, standalone HTML and current collaboration
+peers retain them. They remain reviewable offline without enabling AI.
+**Analyze model** replaces the saved analysis with a new set of active findings;
+Undo restores the previous review. Deleted findings can appear in a later
+analysis. **Simulate breach** uses only active findings from the current snapshot.
+Use matching current clients; older builds may discard saved findings.
+
 #### Simulate a breach path
 
 **Simulate breach**, beside **Analyze model** in AI Analysis, plays a
@@ -714,9 +729,11 @@ finding. Like AI Analysis, it needs a selected scenario and a configured
 provider. A new AI Analysis request sends active-scenario context to that
 provider; replaying existing findings does not.
 
-- If AI Analysis already has findings for the active scenario, the simulation
-  reuses them. Otherwise it sends one AI Analysis request that asks for the
-  most plausible path from an entry point to sensitive data.
+- If AI Analysis has a saved review for the active scenario, the simulation
+  reuses its active findings. If none are active, it asks you to run **Analyze
+  model** rather than replacing your review decisions. Without a review for
+  that scenario, it sends one AI Analysis request that asks for the most
+  plausible path from an entry point to sensitive data.
 - It takes the finding with the highest suggested severity and builds the path
   in the browser. Starting from a flow the finding references (or else a flow
   touching a referenced node, or else the scenario's first flow), it follows
@@ -730,7 +747,7 @@ provider; replaying existing findings does not.
   **Pause**, **Resume**, **Restart** or **Close** to control playback.
 - When playback finishes, the panel names the last step under **Target
   reached** and lists up to four **Recommended protections**, taken from the
-  recommendations of all current AI findings in severity order. **Create
+  recommendations of active AI findings in severity order. **Create
   *N* work items** adds one Pending review work item per protection with only
   its Description filled in, closes the simulation and opens Work. Add a Name,
   type and severity before accepting them.
@@ -775,10 +792,12 @@ Findings are labelled with their analyzed scenario snapshot. Navigating the
 model does not silently re-analyze them. Closing a docked inspector cancels a
 pending request but retains previous results and drafts; changing presentation
 does not cancel it. New/Open or changing collaboration rooms clears the outgoing
-review and draft. Changing the AI provider clears findings and conversation,
-while leaving the draft editable. Reloading or closing the main page clears
-this in-memory review state and closes its separate window. It is not stored
-in the model or shared through collaboration.
+conversation and draft and displays the incoming model's saved findings.
+Changing the AI provider clears the conversation and return context, but keeps
+saved findings and their review decisions. Reloading or closing the main page
+clears unsent drafts and chat and closes its separate window. Chat, drafts,
+provider preferences and navigation state are not stored in the model or shared
+through collaboration.
 
 #### Export all inspector data to Excel
 
@@ -799,7 +818,8 @@ Unsent drafts are not saved model data and are not exported.
 An accepted finding may appear in both the AI findings
 sheet and the saved Issues sheet; these are distinct records, not deduplicated.
 Saved issues have review status, not an invented severity; AI findings retain
-their suggested severity.
+their suggested severity and a separate Active/Resolved review status. Deleted
+findings are not exported.
 
 The export is a real `.xlsx` workbook, not HTML renamed to `.xls`. All values,
 including formula-looking strings and URLs, are text cells; there are no

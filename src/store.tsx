@@ -1,5 +1,6 @@
 import { SERVICES } from "./services";
 import { normalizeWorkItem } from "./workItems";
+import { captureFindings, normalizeFinding, normalizeFindings, normalizeFindingAnalysis } from "./findings";
 import { normalizeTextAnnotations, normalizeTextAnnotationIds } from "./textAnnotations";
 import { declutterDocument, type DeclutterInput } from "./declutterLayout";
 import type { PsTextAnnotation } from "./types";
@@ -21,7 +22,7 @@ import type { ChangeItem, ChangeTarget } from "./diff";
 import type { AssistantAnalysisSnapshot, AssistantFinding } from "./designAssistant";
 import { propagateScenarioEdgeData } from "./dataPropagation";
 import { applyDesignerResult, buildDesignerContext, buildDesignPlanContext, designerDocumentKey, describeDesignerChanges, type DesignRequestSnapshot } from "./threatModelDesigner";
-import { loadAutosaveRaw, saveAutosave } from "./autosave";
+import { createAutosaveSession, loadAutosaveRaw, saveAutosave } from "./autosave";
 import { useUiShell } from "./uiShell";
 import { resetDetailsTab } from "./components/detailsTabStore";
 import type { ParsedPrivExp } from "./privacyManagerImport";
@@ -99,6 +100,8 @@ import {
   type PsDocument,
   type PsEdge,
   type PsIssue,
+  type PsFinding,
+  type PsFindingAnalysis,
   type PsNode,
   type Position,
   type Retention,
@@ -630,18 +633,13 @@ interface StoreApi {
   // in-progress typing isn't lost when FlowEdge transiently remounts.
   editingEdgeTitleValue: string;
   setEditingEdgeTitleValue: (value: string) => void;
-  // Latest AI Analysis findings. Store-backed because SidePanel unmounts the
-  // whole inspector when it is dismissed, which would otherwise discard the
-  // results, and because the inspector tab badge counts them.
-  assistantFindings: AssistantFinding[];
-  setAssistantFindings: Dispatch<SetStateAction<AssistantFinding[]>>;
+  // Saved AI review; the session ID on its view is local navigation context only.
+  assistantFindings: PsFinding[];
   assistantAnalysis: AssistantAnalysisSnapshot | null;
-  setAssistantAnalysis: Dispatch<SetStateAction<AssistantAnalysisSnapshot | null>>;
-  // Findings already accepted into Issues or Work Items. Kept beside the
-  // findings themselves so a dismissed inspector cannot re-enable the accept
-  // buttons and let the same finding be added twice.
+  saveAssistantReview: (findings: AssistantFinding[], analysis: PsFindingAnalysis, source: PsDocument) => void;
+  updateFinding: (id: string, patch: Partial<Pick<PsFinding, "status" | "accepted" | "workItemType" | "weaknessType">>) => void;
+  deleteFinding: (id: string) => void;
   acceptedFindingIds: ReadonlySet<string>;
-  setAcceptedFindingIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   // Right-pane "all comments" view (replaces the normal SidePanel when on).
   allCommentsViewOpen: boolean;
   setAllCommentsViewOpen: (open: boolean) => void;
@@ -1011,6 +1009,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [authenticationLibrary, setAuthenticationLibraryState] = useState(libraryInitial.methods);
   const [authenticationStorageError, setAuthenticationStorageError] = useState(libraryInitial.error);
   const [catalogSnapshotError, setCatalogSnapshotError] = useState<string | null>(null);
+  const autosaveSession = useMemo(() => createAutosaveSession(readEmbeddedDoc()), []);
   const libraryRef = useRef(authenticationLibrary);
   const setAuthenticationLibrary = useCallback((next: AuthTypeDef[]) => {
     libraryRef.current = next;
@@ -1023,10 +1022,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   //
   // Standalone-HTML exports embed the document inside the file via
   // `<script type="application/json" id="ps-embedded-doc">…</script>`.
-  // When such a script is present, we seed FROM IT instead of from
-  // autosave so opening an exported file is a self-contained
-  // experience. Autosave still picks up subsequent edits per-origin
-  // (file:// URLs get a localStorage partition per file).
+  // Only recovery associated with this exact embedded seed may override it.
+  // Tab-local recovery wins over the origin's shared recovery checkpoint.
   const initial = useMemo(() => {
     const documentRecoveryFailure = (value: unknown, history: unknown[] = []) => {
       if (!value || typeof value !== "object") return null;
@@ -1043,6 +1040,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const saved of [value, ...history]) {
           if (saved && typeof saved === "object") {
             validateNodeTypeGuidanceEntries((saved as Partial<PsDocument>).nodeTypes);
+            normalizeFindings((saved as Partial<PsDocument>).findings);
+            normalizeFindingAnalysis((saved as Partial<PsDocument>).findingAnalysis);
             const annotations = normalizeTextAnnotations(saved as Partial<PsDocument>);
             for (const scenario of (saved as Partial<PsDocument>).scenarios ?? []) {
               normalizeTextAnnotationIds(scenario, annotations ?? []);
@@ -1105,7 +1104,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
 
     const embedded = unwrap(readEmbeddedDoc());
-    if (embedded) {
+    const raw = loadAutosaveRaw(autosaveSession);
+    if (embedded && !raw) {
       const failure = documentRecoveryFailure(embedded.doc);
       if (failure) return failure;
       const doc = safeNorm(embedded.doc);
@@ -1114,7 +1114,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const raw = loadAutosaveRaw();
     if (!raw) return null;
     const failure = documentRecoveryFailure(raw.doc, [...raw.past, ...raw.future]);
     if (failure) return failure;
@@ -1349,13 +1348,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     null
   );
   const [editingEdgeTitleValue, setEditingEdgeTitleValue] = useState("");
-  const [assistantFindings, setAssistantFindings] = useState<AssistantFinding[]>(
-    []
-  );
-  const [assistantAnalysis, setAssistantAnalysis] = useState<AssistantAnalysisSnapshot | null>(null);
-  const [acceptedFindingIds, setAcceptedFindingIds] = useState<
-    ReadonlySet<string>
-  >(() => new Set<string>());
+  const assistantFindings = useMemo(() => doc.findings ?? [], [doc.findings]);
+  const assistantAnalysis = useMemo<AssistantAnalysisSnapshot | null>(() =>
+    doc.findingAnalysis ? { ...doc.findingAnalysis, documentSessionId } : null,
+  [doc.findingAnalysis?.id, doc.findingAnalysis?.scenarioId, doc.findingAnalysis?.scenarioName,
+    doc.findingAnalysis?.createdAt, doc.findingAnalysis?.answer, documentSessionId]);
+  const acceptedFindingIds = useMemo(() =>
+    new Set(assistantFindings.filter(finding => finding.accepted).map(finding => finding.id)), [assistantFindings]);
   const [allCommentsViewOpen, setAllCommentsViewOpenRaw] = useState(false);
   const [allIssuesViewOpen, setAllIssuesViewOpenRaw] = useState(false);
   const [diffViewOpen, setDiffViewOpenRaw] = useState(false);
@@ -1519,6 +1518,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
     });
   }, [updateDocumentHistory]);
+
+  const saveAssistantReview = useCallback((findings: AssistantFinding[], analysis: PsFindingAnalysis, source: PsDocument) => {
+    const savedFindings = captureFindings(findings, source);
+    const savedAnalysis = normalizeFindingAnalysis({ ...analysis, id: uid("fa") });
+    if (!savedAnalysis) throw new Error("A completed AI review requires its analysis snapshot.");
+    snapshot();
+    setDoc(current => ({ ...current, findings: savedFindings, findingAnalysis: savedAnalysis }));
+  }, [snapshot, setDoc]);
+
+  const updateFinding = useCallback((
+    id: string, patch: Partial<Pick<PsFinding, "status" | "accepted" | "workItemType" | "weaknessType">>,
+  ) => {
+    const current = docRef.current.findings?.find(finding => finding.id === id);
+    if (!current) throw new Error("This finding is no longer available.");
+    const updated = normalizeFinding({ ...current, ...patch });
+    if (JSON.stringify(current) === JSON.stringify(updated)) return;
+    snapshot();
+    setDoc(doc => ({ ...doc, findings: doc.findings?.map(finding => finding.id === id ? updated : finding) }));
+  }, [snapshot, setDoc]);
+
+  const deleteFinding = useCallback((id: string) => {
+    if (!docRef.current.findings?.some(finding => finding.id === id)) {
+      throw new Error("This finding is no longer available.");
+    }
+    snapshot();
+    setDoc(doc => ({ ...doc, findings: doc.findings?.filter(finding => finding.id !== id) }));
+  }, [snapshot, setDoc]);
 
   const designerCatalog = useCallback(() => {
     const current = docRef.current;
@@ -1701,9 +1727,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshot();
     setDoc(emptyDocument());
     setDocumentSessionId(current => current + 1);
-    setAssistantFindings([]);
-    setAssistantAnalysis(null);
-    setAcceptedFindingIds(new Set());
     setDocumentRecoveryError(null);
     setActiveScenarioId(null);
     setSelection(null);
@@ -1715,10 +1738,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // -------- Autosave --------
   //
-  // Persist {doc, past, future, view} to localStorage with a debounce so
-  // rapid edits coalesce. The cleanup-as-debounce pattern can't guarantee
-  // the timeout fires before tab close, so we also flush synchronously on
-  // pagehide and when the document becomes hidden.
+  // Coalesce edits without postponing the checkpoint during continuous input.
+  // Lifecycle flushes also capture the latest queued document synchronously.
   const flushAutosave = useCallback(() => {
     if (documentRecoveryError) return;
     const b = documentHistoryRef.current;
@@ -1737,8 +1758,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCatalogSnapshotError(`Autosave was not updated: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    setCatalogSnapshotError(null);
-    saveAutosave({
+    const error = saveAutosave({
       doc: savedDoc,
       past: savedPast,
       future: savedFuture,
@@ -1751,12 +1771,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         future: b.future.map(entry => entry.classificationLibrary ?? null),
       },
       view: { activeScenarioId: activeScenarioIdRef.current, filter: filterRef.current },
-    });
+    }, autosaveSession);
+    setCatalogSnapshotError(error);
   }, [documentRecoveryError]);
 
+  const autosaveTimer = useRef<number | null>(null);
   useEffect(() => {
-    const handle = window.setTimeout(flushAutosave, autosaveIntervalMs);
-    return () => window.clearTimeout(handle);
+    if (autosaveTimer.current !== null) return;
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      flushAutosave();
+    }, autosaveIntervalMs);
   }, [doc, past, future, activeScenarioId, filter, flushAutosave, autosaveIntervalMs]);
 
   useEffect(() => {
@@ -1767,6 +1792,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener("pagehide", flushAutosave);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
       window.removeEventListener("pagehide", flushAutosave);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -4265,9 +4292,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       snapshot();
       setDoc(newDoc);
       setDocumentSessionId(current => current + 1);
-      setAssistantFindings([]);
-      setAssistantAnalysis(null);
-      setAcceptedFindingIds(new Set());
       setDocumentRecoveryError(null);
 
       let nextActive: string | null = null;
@@ -4656,11 +4680,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     editingEdgeTitleValue,
     setEditingEdgeTitleValue,
     assistantFindings,
-    setAssistantFindings,
     assistantAnalysis,
-    setAssistantAnalysis,
+    saveAssistantReview,
+    updateFinding,
+    deleteFinding,
     acceptedFindingIds,
-    setAcceptedFindingIds,
     allCommentsViewOpen,
     setAllCommentsViewOpen,
     allIssuesViewOpen,
@@ -4976,6 +5000,8 @@ export function normalizeDoc(
 ): PsDocument {
   validateThreatNotes(doc);
   const textAnnotations = normalizeTextAnnotations(doc);
+  const findings = normalizeFindings(doc.findings);
+  const findingAnalysis = normalizeFindingAnalysis(doc.findingAnalysis);
   const base = emptyDocument();
   const authenticationDefinitions = doc.authenticationDefinitions === undefined
     ? [] : validatePortableAuthenticationDefinitions(doc.authenticationDefinitions);
@@ -5274,6 +5300,8 @@ export function normalizeDoc(
     nodeTypes,
     nodes: normalizedNodes,
     ...(textAnnotations !== undefined ? { textAnnotations } : {}),
+    ...(findings !== undefined ? { findings } : {}),
+    ...(findingAnalysis !== undefined ? { findingAnalysis } : {}),
     edges: rawEdges.map((e) => {
       const authenticationTypes = normalizeAuthTypes(e, authenticationDefinitions);
       const rawPi = (e as { productionIdentity?: unknown }).productionIdentity;

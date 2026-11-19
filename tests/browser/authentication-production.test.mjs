@@ -170,6 +170,14 @@ test("production: standalone Authentication Library definition and version survi
     await reopened.locator('button[aria-controls="ps-command-menu-review"]').click();
     await reopened.getByRole("menuitem", { name: /^Deviations/ }).click();
     await reopened.locator(".ps-deviations").getByText("Historical ests-relationship", { exact: true }).waitFor();
+    await reopened.locator('.react-flow__node-process[data-id="n_client"]').click();
+    await reopened.getByRole("textbox", { name: "Title", exact: true }).fill("Recovered standalone edit");
+    await reopened.waitForFunction(key => JSON.parse(sessionStorage.getItem(key) || "null")?.doc.nodes
+      .some(node => node.title === "Recovered standalone edit"), autosaveKey);
+    await reopened.reload();
+    await reopened.locator('.react-flow__node-process[data-id="n_client"]').waitFor();
+    assert.match(await reopened.locator('.react-flow__node-process[data-id="n_client"]').innerText(),
+      /Recovered standalone edit/);
     assert.deepEqual(faults, [], "No network/API, runtime errors or unexpected dialogs");
     console.log(`Production standalone version ${version}; browser ${browser.version()}; embedded authentication and identity retained.`);
   } finally {

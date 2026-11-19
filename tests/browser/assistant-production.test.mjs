@@ -501,6 +501,94 @@ test("production: Create work item transfers full finding context and severity a
   });
 });
 
+test("production: saved finding lifecycle preserves copies, reanalysis history and standalone recovery", async () => {
+  let portable;
+  await run(async ({ page, requests }) => {
+    await settleReviewGeometry(page);
+    const original = (await savedState(page)).doc;
+    assert.equal(original.findings.length, findings.length);
+    assert.ok(original.findingAnalysis.id);
+    assert.ok(original.findings.every(item => item.status === "Active" && item.accepted === false));
+    await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).click();
+    const acceptedIssue = (await savedState(page)).doc;
+    assert.equal(acceptedIssue.findings.find(item => item.id === "node").accepted, true);
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    assert.deepEqual((await savedState(page)).doc, original, "One Undo removes the issue and its acceptance marker");
+    await page.getByRole("button", { name: /^Redo/ }).click();
+    assert.deepEqual((await savedState(page)).doc, acceptedIssue);
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await finding(page, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).click();
+    const acceptedWork = (await savedState(page)).doc;
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    assert.deepEqual((await savedState(page)).doc, acceptedIssue, "One Undo removes Work and its acceptance marker");
+    await page.getByRole("button", { name: /^Redo/ }).click();
+    assert.deepEqual((await savedState(page)).doc, acceptedWork);
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await finding(page, "Boundary finding").getByRole("button", { name: "Resolve", exact: true }).click();
+    const reviewed = (await savedState(page)).doc;
+    await page.reload();
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    assert.deepEqual((await savedState(page)).doc, reviewed);
+    assert.equal(await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true);
+    assert.equal(await finding(page, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).isDisabled(), true);
+    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    assert.equal(requests.length, 1, "Reload and lifecycle actions never request AI");
+    const confirmations = [];
+    page.removeAllListeners("dialog");
+    page.on("dialog", async dialog => {
+      confirmations.push({ type: dialog.type(), message: dialog.message() });
+      await dialog.accept();
+    });
+    for (const title of ["Node finding", "Flow finding"]) {
+      await finding(page, title).getByRole("button", { name: "Delete", exact: true }).click();
+      await finding(page, title).waitFor({ state: "detached" });
+    }
+    const deleted = (await savedState(page)).doc;
+    assert.deepEqual(deleted, { ...reviewed, findings: reviewed.findings.filter(item => !["node", "edge"].includes(item.id)) },
+      "Delete keeps the separate Issue and Work snapshots unchanged");
+    assert.equal(confirmations.length, 2);
+    assert.ok(confirmations.every(dialog => dialog.type === "confirm" && dialog.message.startsWith("Delete this finding?")));
+    await page.getByRole("button", { name: "Analyze model", exact: true }).click();
+    await until(async () => (await savedState(page)).doc.findingAnalysis.id !== deleted.findingAnalysis.id, "new review saved");
+    const rerun = (await savedState(page)).doc;
+    assert.equal(rerun.findings.length, findings.length);
+    assert.ok(rerun.findings.every(item => item.status === "Active" && item.accepted === false));
+    assert.deepEqual(rerun.issues, deleted.issues);
+    assert.deepEqual(rerun.workItems, deleted.workItems);
+    await page.getByRole("button", { name: /^Undo/ }).click();
+    assert.deepEqual((await savedState(page)).doc, deleted, "Reanalysis is one undoable review replacement");
+    portable = await nativeExport(page);
+    assert.deepEqual(portable.doc, deleted);
+    const workbook = await readWorkbookDownload(page);
+    const rows = workbook["AI findings"], status = rows[0].indexOf("Status");
+    assert.equal(rows.length, deleted.findings.length + 1);
+    assert.equal(rows.find(row => row[0] === "boundary")[status], "Resolved");
+    assert.equal(rows.some(row => ["node", "edge"].includes(row[0])), false);
+  });
+  await run(async ({ page, virtualFiles, requests }) => {
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    await page.locator('button[aria-controls="ps-command-menu-file"]').click();
+    const downloadEvent = page.waitForEvent("download");
+    await page.getByRole("menuitem", { name: /Standalone HTML/i }).click();
+    const chunks = [];
+    for await (const chunk of await (await downloadEvent).createReadStream()) chunks.push(chunk);
+    virtualFiles.set("/saved-findings.html", Buffer.concat(chunks).toString("utf8"));
+    await page.evaluate(key => localStorage.removeItem(key), autosaveKey);
+    await page.goto(`${origin}/saved-findings.html`);
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).click();
+    const edited = (await savedState(page)).doc;
+    assert.deepEqual(edited, { ...portable.doc, findings: portable.doc.findings.map(item =>
+      item.id === "boundary" ? { ...item, status: "Active" } : item) });
+    await page.reload();
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await finding(page, "Boundary finding").getByRole("button", { name: "Resolve", exact: true }).waitFor();
+    assert.deepEqual((await savedState(page)).doc, edited);
+    assert.equal(requests.length, 0, "Saved findings remain editable in standalone without requesting AI");
+  }, { standalone: true, initial: portable });
+});
+
 test("production: both AI contexts carry complete saved guidance and accepted findings retain unverified provenance", async () => {
   const publicCatalog = JSON.parse(await readFile(resolve(root, "src", "data", "microsoftCloudNodeTypes.json"), "utf8"));
   const coreGuidance = publicCatalog.filter(type => type.aiDesignGuidance);

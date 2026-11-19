@@ -447,10 +447,15 @@ personal/confidential sample values out of the model. Review AI evidence
 against source or deployment facts: this is not a live vulnerability database
 lookup or security certification.
 
-**Create issue** and **Create work item** explicitly copy a suggestion into
-the model. Chat and unaccepted findings are transient panel state, not
-durable review records. The deterministic **Review > Analyze** needs none of
-this service setup and remains a separate operation.
+Completed AI findings and their analysis snapshot are saved model data, including
+unaccepted findings, Active/Resolved status, classification and accepted-state
+feedback. Native files, autosave, standalone HTML and current collaboration peers
+retain them. Resolve/Reopen and confirmed Delete are undoable. **Create issue**
+and **Create work item** make separate saved copies; deleting a finding never
+deletes those copies. A new AI analysis replaces the saved review and can be
+undone. Chat, drafts, provider choice and return navigation remain transient or
+profile-local. The deterministic **Review > Analyze** needs none of this service
+setup and remains a separate operation.
 
 ## Collaboration
 
@@ -480,16 +485,32 @@ browser protections. Local file editing does not require a room.
 ## Browser recovery
 
 Autosave stores the document, bounded Undo/Redo history, active scenario, and
-filters in browser localStorage for the app origin/profile. Writes are
-debounced, with a flush when the page is hidden or closed. Settings changes
-the autosave interval. Browser quota or denied storage can prevent recovery;
-in-memory editing is not evidence that a save succeeded.
+filters in browser storage for the app origin/profile. Each tab keeps its own
+sessionStorage recovery copy, with a shared localStorage checkpoint for new
+tabs. Edits are coalesced within the selected autosave interval, including
+continuous editing, with an additional flush when the page is hidden or closed.
+Browser quota or denied storage produces a visible warning; in-memory editing
+is not evidence that a save succeeded. A later successful edit clears the warning.
 
 The current key is `secure-design-studio:autosave:v1`. Startup can migrate
 the legacy `privsec-diagram:autosave:v1` value when there is no current
-autosave. A model embedded in standalone HTML takes precedence over autosave.
-Standalone file-origin storage behavior varies by browser; explicitly export
-changes instead of relying on refresh or copying the original HTML.
+autosave. Standalone HTML first restores recovery associated with its exact
+embedded seed; otherwise it opens that embedded model, never an unrelated
+diagram's recovery. A newly exported snapshot starts a separate recovery scope.
+Standalone file-origin storage behavior varies by browser.
+
+Recovery download/discard helpers use the current tab and embedded seed too.
+Discard removes only that selected recovery value, not another tab's newer
+shared checkpoint. When tab storage is unavailable, the shared copy retains
+its Undo/Redo history and the app reports the loss of tab-isolated recovery.
+
+An unchanged stale tab cannot replace another tab's shared checkpoint. If
+another tab has changed it, subsequent edits remain in this tab's recovery copy
+and a warning explains that new tabs will not restore those edits. Refresh
+restores the current tab's copy; closing it may discard sessionStorage. Save a
+`.tma` backup before closing tabs or clearing browser data. Autosave does not
+rewrite an opened `.tma`, the original HTML, or a PNG: use Save or re-export.
+Annotation text must be explicitly applied before it becomes model content.
 
 If you deliberately want to remove **document recovery only**, save a `.tma`
 backup first. In developer tools for the correct app origin, run:
@@ -497,6 +518,7 @@ backup first. In developer tools for the correct app origin, run:
 ```javascript
 localStorage.removeItem("secure-design-studio:autosave:v1");
 localStorage.removeItem("privsec-diagram:autosave:v1");
+sessionStorage.removeItem("secure-design-studio:autosave:v1");
 location.reload();
 ```
 

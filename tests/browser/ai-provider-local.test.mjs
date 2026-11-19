@@ -282,7 +282,8 @@ test("AI providers: shared selection, readiness, request routing, persistence an
       "Provider change invalidates the hidden Findings origin");
     await designer.getByRole("button", { name: "Close Threat Model Designer", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "previous return context is no longer available" }).waitFor();
-    assert.equal(await analysis.locator(".ps-assistant-finding").count(), 0);
+    assert.equal(await analysis.locator(".ps-assistant-finding").count(), 5,
+      "Provider selection clears transient navigation/conversation, not saved findings");
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
     assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey), navigationDoc,
       "Provider invalidation and navigation leave the model unchanged");

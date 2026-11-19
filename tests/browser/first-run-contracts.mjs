@@ -73,7 +73,10 @@ async function recordImportDialogs(page, acceptTm7 = true) {
 export function registerFirstRunContracts({ getHarness }) {
   test("usability: first-run keyboard traversal stays inside the blocking dialog", async () => {
     await getHarness().run("usability: first-run keyboard boundaries", async ({ page }) => {
-      await page.addInitScript(key => localStorage.removeItem(key), autosaveKey);
+      await page.addInitScript(key => {
+        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
+      }, autosaveKey);
       await page.reload();
       const dialog = page.getByRole("dialog", { name: "Create your first scenario", exact: true });
       await dialog.waitFor();
