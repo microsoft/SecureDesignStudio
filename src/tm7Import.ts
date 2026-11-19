@@ -56,6 +56,7 @@ import {
 } from "./types";
 import { chooseHandles } from "./tmcImport";
 import { normalizeDfdValue } from "./dfdSemantics";
+import { containsRect, type Rect } from "./boundaryGeometry";
 
 export class Tm7ImportError extends Error {}
 
@@ -301,6 +302,7 @@ function readStencilHeader(properties: Element | null): string {
 
 interface ParsedNode {
   id: string;
+  sourceBounds: Rect;
   title: string;
   serviceTreeId: string;
   description: string;
@@ -491,6 +493,7 @@ function parseBorderEntry(entry: Element): {
         serviceTreeId,
         description: header ? `TMT stencil: ${header}` : "",
         position: { x: left + w / 2, y: top + h / 2 },
+        sourceBounds: { position: { x: left, y: top }, size: { width: w, height: h } },
         role: native?.role ?? { invalid: `Unsupported TM7 role ${genericTypeId || xsiType}` },
       },
     };
@@ -814,6 +817,28 @@ export function parseTm7(xmlText: string): Tm7ImportResult {
       return annotation;
     });
     skipped.lineBoundary += surf.lineBoundaries;
+  }
+
+  // Infer from original per-tab rectangles, before shared geometry is reduced
+  // to its first occurrence or React measures the imported nodes.
+  const boundaryContainment = new Map<string, Map<string, boolean>>();
+  for (const surf of parsedSurfaces) for (const boundary of surf.boundaries) {
+    let containment = boundaryContainment.get(boundary.id);
+    if (!containment) {
+      containment = new Map();
+      boundaryContainment.set(boundary.id, containment);
+    }
+    for (const node of surf.nodes) {
+      const inside = containsRect(boundary, node.sourceBounds);
+      if (containment.has(node.id) && containment.get(node.id) !== inside) {
+        diagnostics.push(`Shared boundary ${boundary.id} has different containment for node ${node.id} across tabs; the first occurrence is retained.`);
+      } else {
+        containment.set(node.id, inside);
+      }
+    }
+  }
+  for (const [id, containment] of boundaryContainment) {
+    boundariesByGuid.get(id)!.nodeIds = [...containment].filter(([, inside]) => inside).map(([nodeId]) => nodeId);
   }
 
   // Each connector must resolve to node occurrences on its own tab.

@@ -402,6 +402,93 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
   });
 });
 
+test("regression: TM7 declutter retains boundary bindings and visible communication edits", async () => {
+  await harness.run("regression: TM7 declutter communication and boundaries", async ({ page }) => {
+    const id = i => `${String(i).padStart(8, "0")}-2222-4222-8222-222222222222`;
+    const rect = (i, boundary, x, width) => `<KeyValueOfguidanyType><Key>${id(i)}</Key>
+      <Value i:type="${boundary ? "BorderBoundary" : "StencilEllipse"}">
+        <GenericTypeId>${boundary ? "GE.TB.B" : "GE.P"}</GenericTypeId><Guid>${id(i)}</Guid>
+        <Properties><anyType><DisplayName>Name</DisplayName><Value>Synthetic ${i}</Value></anyType></Properties>
+        <Left>${x}</Left><Top>${boundary ? 50 : 100}</Top><Width>${width}</Width><Height>${boundary ? 250 : 100}</Height>
+      </Value></KeyValueOfguidanyType>`;
+    const title = "Imported HTTP operation";
+    const xml = `<ThreatModel xmlns:i="http://www.w3.org/2001/XMLSchema-instance"><DrawingSurfaceList>
+      <DrawingSurfaceModel><Guid>${id(10)}</Guid><Borders>
+        ${rect(1, false, 100, 100)}${rect(2, false, 400, 100)}${rect(3, false, 900, 100)}
+        ${rect(20, true, 50, 550)}${rect(21, true, 350, 200)}
+      </Borders><Lines><KeyValueOfguidanyType><Key>${id(30)}</Key><Value i:type="Connector">
+        <GenericTypeId>GE.DF</GenericTypeId><Guid>${id(30)}</Guid>
+        <SourceGuid>${id(1)}</SourceGuid><TargetGuid>${id(2)}</TargetGuid>
+        <Properties><anyType><DisplayName>Name</DisplayName><Value>${title}</Value></anyType></Properties>
+      </Value></KeyValueOfguidanyType></Lines></DrawingSurfaceModel></DrawingSurfaceList></ThreatModel>`;
+    await page.evaluate(() => {
+      window.confirm = message => {
+        if (!message.startsWith("Import 1 scenario from TM7")) throw new Error(`Unexpected confirmation: ${message}`);
+        return true;
+      };
+    });
+    await fileMenu(page).click();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("menuitem", { name: "Threat Modeling Tool (.tm7)…", exact: true }).click();
+    await (await chooser).setFiles({ name: "bindings.tm7", mimeType: "application/xml", buffer: Buffer.from(xml) });
+    await until(() => scenario(page).inputValue().then(value => value === id(10)), "TM7 scenario imported");
+    await waitForMeasuredDiagram(page);
+    const before = await savedDiagram(page);
+    const expectedMemberships = [[id(1), id(2)], [id(2)]];
+    assert.deepEqual(before.doc.boundaries.map(b => b.nodeIds), expectedMemberships);
+    await page.getByRole("button", { name: "Declutter diagram", exact: true }).click();
+    const arranged = await savedDiagram(page);
+    assert.deepEqual(declutterMeaning(arranged.doc), declutterMeaning(before.doc));
+    for (const boundary of arranged.doc.boundaries) for (const node of arranged.doc.nodes) {
+      const inside = node.position.x >= boundary.position.x && node.position.y >= boundary.position.y &&
+        node.position.x + node.size.width <= boundary.position.x + boundary.size.width &&
+        node.position.y + node.size.height <= boundary.position.y + boundary.size.height;
+      assert.equal(inside, boundary.nodeIds.includes(node.id), "Boundary geometry matches imported memberships");
+    }
+    const label = page.locator(`.ps-edge-label[data-edge-id="${id(30)}"]`);
+    assert.equal(await label.locator(".ps-edge-title").textContent(), title);
+    assert.ok(await label.locator(".ps-edge-auth-badge").isVisible());
+    assert.equal(await label.locator(".ps-edge-protocol-badge").count(), 0, "No profile is invented on import");
+    await page.getByRole("tab", { name: /^Edges/ }).click();
+    await page.getByRole("row", { name: new RegExp(`^${title}, sequence`) }).click();
+    await page.getByRole("tab", { name: /^Properties/ }).click();
+    await page.getByRole("combobox", { name: /^Protocol profile/ }).selectOption("https");
+    await page.getByRole("combobox", { name: /^Authentication method/ }).selectOption("ApiKey");
+    await until(() => label.locator(".ps-edge-protocol-badge").innerText().then(text => text === "HTTPS"),
+      "Protocol updates immediately");
+    const authText = await label.locator(".ps-edge-auth-badge").innerText();
+    assert.doesNotMatch(authText, /Auth —/);
+    assert.equal(await label.locator(".ps-edge-title").textContent(), title, "Edits never rewrite imported titles");
+    const edited = await savedDiagram(page);
+    assert.equal(edited.doc.edges[0].protocolId, "https");
+    assert.deepEqual(edited.doc.edges[0].authenticationTypes, ["ApiKey"]);
+    assert.deepEqual(edited.doc.boundaries, arranged.doc.boundaries);
+    const badgeGeometry = await label.evaluate(element => {
+      const outer = element.getBoundingClientRect();
+      return [...element.querySelectorAll(".ps-edge-protocol-badge, .ps-edge-auth-badge")].every(badge => {
+        const box = badge.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.left >= outer.left && box.right <= outer.right &&
+          box.top >= outer.top && box.bottom <= outer.bottom;
+      });
+    });
+    assert.ok(badgeGeometry, "Both badges fit within the measured label rectangle");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await savedDiagram(page)).doc.edges[0].authenticationTypes, arranged.doc.edges[0].authenticationTypes);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.equal(await label.locator(".ps-edge-auth-badge").innerText(), authText);
+    const native = await exportModel(page);
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "boundaries-reopened.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(native)),
+    });
+    await page.getByLabel("Document status").getByText("boundaries-reopened.tma", { exact: true }).waitFor();
+    await waitForMeasuredDiagram(page);
+    assert.deepEqual((await savedDiagram(page)).doc, native.doc, "Native save/reopen retains boundaries, edited fields and layout");
+    assert.ok(await label.locator(".ps-edge-auth-badge").isVisible());
+    assert.equal(await label.locator(".ps-edge-auth-badge").innerText(), authText);
+    assert.equal(await label.locator(".ps-edge-protocol-badge").innerText(), "HTTPS");
+  });
+});
+
 test("usability: Declutter stays beside zoom controls at 320px and reports unsupported boundaries without mutation", async () => {
   await harness.run("usability: Declutter control and fail-closed boundaries", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 });
