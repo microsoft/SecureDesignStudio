@@ -191,10 +191,10 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       const view = inspectorHostRef.current?.ownerDocument.defaultView ?? window;
       view.requestAnimationFrame(() => {
         if (ticket !== focusTicketRef.current) return;
-        inspectorHostRef.current?.ownerDocument.defaultView?.focus();
-        inspectorHostRef.current
-          ?.querySelector<HTMLElement>(`#ps-inspector-tab-${tab}`)
-          ?.focus({ preventScroll: true });
+        const control = inspectorHostRef.current?.querySelector<HTMLElement>(`#ps-inspector-tab-${tab}`);
+        if (!control || control.getAttribute("aria-selected") !== "true" || control.getClientRects().length === 0) return;
+        control.ownerDocument.defaultView?.focus();
+        control.focus({ preventScroll: true });
       });
     };
     const restoreAfterClose = () => {
@@ -266,7 +266,6 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       setInspectorPinned: (inspectorPinned) =>
         setPreferences((current) => ({ ...current, inspectorPinned })),
       setInspectorActiveTab: (inspectorActiveTab, options) => {
-        ++focusTicketRef.current;
         if (!options?.automatic) endReviewNavigation();
         setPreferences((current) => ({ ...current, inspectorActiveTab }));
       },
