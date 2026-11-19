@@ -644,7 +644,7 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
     await page.getByLabel("Document status").getByText("boundaries-reopened.tma", { exact: true }).waitFor();
     await waitForMeasuredDiagram(page);
     assert.deepEqual((await savedDiagram(page)).doc, native.doc, "Native save/reopen retains boundaries, edited fields and layout");
-    assert.ok(await label.locator(".ps-edge-auth-badge").isVisible());
+    await label.locator(".ps-edge-auth-badge").waitFor({ state: "visible" });
     assert.equal(await label.locator(".ps-edge-auth-badge").innerText(), authText);
     assert.equal(await label.locator(".ps-edge-protocol-badge").innerText(), "HTTPS");
   });
