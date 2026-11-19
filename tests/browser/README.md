@@ -78,6 +78,11 @@ explicit unchanged-state failure for crossing boundary memberships. These
 synthetic checks do not establish readability of a real model or participant
 usability; inspect the supplied diagram separately.
 
+The TM7-to-Declutter case checks imported nested boundary bindings, visible
+communication/authentication edits, badge containment,
+Undo/Redo and native save/reopen. Pure TM7 contracts additionally cover original
+stencil bounds, partial overlaps and shared-boundary containment conflicts.
+
 PNG-export contracts compare a rendered node against the downloaded image in
 both themes, including its icon, multiline title and actual dimensions. They
 sample curved flow geometry and arrowhead fill, check opaque background/grid

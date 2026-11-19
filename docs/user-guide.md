@@ -43,6 +43,14 @@ boundary memberships cannot be arranged automatically; Declutter reports this
 without changing the document. Dense models can still need manual routing and
 zooming to inspect individual flows.
 
+TM7 imports bind boundaries to the original fully enclosed stencils, including
+nested and overlapping scopes. Re-import the original TM7 to recover bindings
+missing from an older import. Shared boundary/node pairs retain their first
+observed containment, with conflicting later tabs disclosed during import.
+Declutter keeps the full flow title and visible communication-profile and
+authentication indicators when specified. Editing those fields updates the
+indicators without rewriting the imported title.
+
 **This is modeling metadata, not resource configuration or certification.**
 Authentication describes flows, not app sign-in. Boundaries do not enforce
 isolation; a clean analysis does not prove real services secure or compliant.
