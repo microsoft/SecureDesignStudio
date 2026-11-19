@@ -904,6 +904,56 @@ body.ps-resizing-h * {
   overflow: auto;
   padding: 12px;
 }
+.ps-review-return {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  background: #ebf3fc;
+  color: #0f548c;
+  border-bottom: 1px solid #b4d6fa;
+}
+.ps-review-return button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.ps-review-return svg { flex: none; }
+.ps-review-return .ps-review-return-dismiss { flex: 0 0 36px; justify-content: center; padding: 6px; }
+.ps-review-return button:hover { background: #cfe4fa; }
+.ps-review-return button:focus-visible { outline: 2px solid var(--ps-fluent-focus); outline-offset: -3px; }
+.ps-review-navigation-notice { flex: none; margin: 0; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--ps-border); }
+.ps-theme-dark .ps-review-return { background: #183c58; color: #d6ebff; border-color: #37658a; }
+.ps-theme-dark .ps-review-return button:hover { background: #245275; }
+.ps-review-record-revealed { outline: 2px solid var(--ps-fluent-brand); outline-offset: -2px; }
+@media (max-width: 640px) {
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-header { min-height: 32px; padding: 2px 8px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-header p { display: none; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-header h2 { font-size: 13px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-icon { width: 28px; height: 28px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-tabs button { height: 28px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-assistant-surface-bar { padding: 2px 4px; gap: 4px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-assistant-surface-bar :is(button, select) { min-height: 28px; padding-block: 4px; }
+  .ps-inspector:is(:has(.ps-review-return), .ps-inspector-expanded):not(.ps-inspector-assistant) .ps-inspector-panel { padding: 6px; }
+  .ps-review-return button { min-height: 32px; padding-block: 4px; }
+  .ps-review-return .ps-review-return-dismiss { flex-basis: 32px; }
+}
+@media (max-width: 640px) and (max-height: 440px) {
+  .ps-inspector:not(.ps-inspector-assistant):is(:has(.ps-review-return), .ps-inspector-expanded) { overflow-y: auto; }
+  .ps-inspector:not(.ps-inspector-assistant):is(:has(.ps-review-return), .ps-inspector-expanded) .ps-inspector-surface-body { flex: none; }
+  .ps-inspector:not(.ps-inspector-assistant):is(:has(.ps-review-return), .ps-inspector-expanded) .ps-inspector-panel { flex: none; overflow: visible; }
+}
 .ps-inspector-panel > section[hidden] {
   display: none;
 }

@@ -196,7 +196,12 @@ export function Toolbar() {
     resetPreferences,
     documentFileName,
     setDocumentFileName,
+    endReviewNavigation,
   } = useUiShell();
+  const selectScenario = (id: string | null) => {
+    endReviewNavigation();
+    setActiveScenarioId(id);
+  };
 
   const fileRef = useRef<HTMLInputElement>(null);
   const compareFileRef = useRef<HTMLInputElement>(null);
@@ -599,7 +604,7 @@ export function Toolbar() {
     const s = sourceId
       ? cloneScenario(sourceId, name, description)
       : createScenario(name, description);
-    if (s) setActiveScenarioId(s.id);
+    if (s) selectScenario(s.id);
     setNewScenarioOpen(false);
     restoreCommandFocus();
   };
@@ -1614,7 +1619,7 @@ export function Toolbar() {
       `${activeScenario.name} copy`,
       activeScenario.description,
     );
-    if (clone) setActiveScenarioId(clone.id);
+    if (clone) selectScenario(clone.id);
   };
 
   const restoreCommandFocus = (controlsId = commandReturnControlsRef.current) => {
@@ -2400,7 +2405,7 @@ export function Toolbar() {
             aria-label="Scenario"
             value={activeScenarioId ?? ""}
             onChange={(event) =>
-              setActiveScenarioId(event.target.value || null)
+              selectScenario(event.target.value || null)
             }
           >
             <option value="">(Show all)</option>
@@ -2862,7 +2867,7 @@ export function Toolbar() {
               onNewScenario();
               return;
             }
-            setActiveScenarioId(v === "" ? null : v);
+            selectScenario(v === "" ? null : v);
           }}
           aria-label="Active scenario"
         >

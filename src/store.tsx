@@ -606,7 +606,7 @@ interface StoreApi {
   activeScenarioId: string | null;
   setActiveScenarioId: (id: string | null) => void;
   selection: Selection;
-  setSelection: (s: Selection) => void;
+  setSelection: (s: Selection, additionalIds?: readonly string[]) => void;
   // Additional node/boundary IDs selected beyond `selection` (multi-select via
   // Ctrl/Cmd + click). Edges are never included — the requirement is that
   // edges are not multiselectable.
@@ -1253,15 +1253,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   selectionRef.current = selection;
   const multiSelectedIdsRef = useRef<string[]>(multiSelectedIds);
   multiSelectedIdsRef.current = multiSelectedIds;
-  // Wrapping setSelection so that any single-selection change also clears
-  // the multi-selection set — this matches "click without ctrl" semantics
-  // for every existing call site (delete handlers, list clicks, etc.).
-  const setSelection = useCallback((s: Selection) => {
+  // Ordinary selection clears the multi-selection set. Back can restore a
+  // previously captured, revalidated selection without touching history.
+  const setSelection = useCallback((s: Selection, additionalIds: readonly string[] = []) => {
     updateDocumentHistory(state => state.scopeReasonEdit &&
       (s?.kind !== "node" || s.id !== state.scopeReasonEdit.nodeId)
       ? { ...state, scopeReasonEdit: null } : state);
     setSelectionRaw(s);
-    setMultiSelectedIds([]);
+    setMultiSelectedIds([...additionalIds]);
   }, [updateDocumentHistory]);
   const setActiveScenarioId = useCallback((id: string | null) => {
     updateDocumentHistory(state => state.scopeReasonEdit && state.scopeReasonEdit.scenarioId !== id
@@ -1424,6 +1423,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       nextDoc: PsDocument,
       options: { resetHistory: boolean },
     ) => {
+      if (options.resetHistory) setDocumentSessionId(current => current + 1);
       updateDocumentHistory(previous => ({
         ...previous,
         doc: nextDoc,

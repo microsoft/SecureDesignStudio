@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useReviewNavigation, useRevealedReviewRecord } from "../reviewNavigation";
 import { useStore } from "../store";
 import { safeNavigationHref } from "../urlSafety";
 import { AdoClient, adoAuthenticationConfigured, adoConnectionAllowed, destinationKey, type AdoConfiguration } from "../adoClient";
@@ -50,6 +51,8 @@ export function WorkItemsModal({
   const { doc, documentSessionId, createWorkItem, updateWorkItem, deleteWorkItem, getCurrentWorkItem } = useStore();
   const panelId = useId();
   const close = onClose ?? (() => undefined);
+  const { visitRecord } = useReviewNavigation();
+  const revealed = useRevealedReviewRecord("work");
   const [profile] = useState(loadProfile);
   const [config, setConfig] = useState<AdoConfiguration | null>(profile.config);
   const [draft, setDraft] = useState(profile.draft);
@@ -310,7 +313,8 @@ export function WorkItemsModal({
           const eligibility = workItemEligibility(item, journalState.journal);
           const locked = busy || Boolean(receipt && receipt.status !== "failed");
           const safe = safeNavigationHref(item.link);
-          return <section className="ps-work-card" key={item.id} aria-label={`Work item ${index + 1}`}>
+          return <section className={`ps-work-card${revealed.id === item.id ? " ps-review-record-revealed" : ""}`}
+            data-review-kind="work" data-review-id={item.id} key={item.id} aria-label={`Work item ${index + 1}`}>
             <div className="ps-work-field">
               <label htmlFor={`${panelId}-name-${index}`}>Name</label>
               <input id={`${panelId}-name-${index}`} type="text" value={item.title ?? ""} maxLength={255} disabled={locked}
@@ -398,7 +402,10 @@ export function WorkItemsModal({
       </p>
       {configurationPending && <p className="ps-modal-help">ADO exports are disabled until the configuration JSON has finished loading and is saved.</p>}
       <footer className="ps-modal-footer ps-work-actions">
-        <button type="button" disabled={busy} onClick={() => createWorkItem()}>+ Add work item</button>
+        <button type="button" disabled={busy} onClick={event => {
+          const created = createWorkItem();
+          if (embedded) visitRecord({ kind: "work", id: created.id }, event.currentTarget);
+        }}>+ Add work item</button>
         <button type="button" disabled={busy || configurationPending} onClick={event => exportAdo("csv", event.currentTarget.ownerDocument)}>Export ADO CSV</button>
         <button type="button" disabled={busy || configurationPending} onClick={event => exportAdo("xlsx", event.currentTarget.ownerDocument)}>Export ADO Excel template</button>
         <button type="button" disabled={busy || configurationPending || !config || !networkAllowed || !authenticationConfigured}

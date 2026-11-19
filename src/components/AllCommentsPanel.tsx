@@ -1,39 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import type { PsComment } from "../types";
+import { reviewElementExists, useReviewNavigation, useRevealedReviewRecord } from "../reviewNavigation";
 
 type StatusFilter = "all" | "active" | "resolved";
 
 export function AllCommentsPanel({ embedded = false }: { embedded?: boolean }) {
   const {
     doc,
-    setActiveScenarioId,
-    setSelection,
     setAllCommentsViewOpen,
-    setFocusTarget,
   } = useStore();
+  const { visitElement } = useReviewNavigation();
+  const revealed = useRevealedReviewRecord("comment");
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [textFilter, setTextFilter] = useState("");
 
-  const items = useMemo(() => {
-    const list = doc.comments.filter((c) => {
-      if (statusFilter === "active" && c.status !== "Active") return false;
-      if (statusFilter === "resolved" && c.status !== "Resolved") return false;
-      if (textFilter.trim()) {
-        const q = textFilter.trim().toLowerCase();
-        if (
-          !c.text.toLowerCase().includes(q) &&
-          !c.replies.some((r) => r.text.toLowerCase().includes(q))
-        ) {
-          return false;
-        }
+  const matchesFilters = useCallback((c: PsComment) => {
+    if (statusFilter === "active" && c.status !== "Active") return false;
+    if (statusFilter === "resolved" && c.status !== "Resolved") return false;
+    if (textFilter.trim()) {
+      const q = textFilter.trim().toLowerCase();
+      if (
+        !c.text.toLowerCase().includes(q) &&
+        !c.replies.some((r) => r.text.toLowerCase().includes(q))
+      ) {
+        return false;
       }
-      return true;
-    });
+    }
+    return true;
+  }, [statusFilter, textFilter]);
+  const revealedComment = doc.comments.find(comment => comment.id === revealed.id);
+
+  const items = useMemo(() => {
+    const list = doc.comments.filter(c => c.id === revealed.id || revealed.retainedIds.has(c.id) || matchesFilters(c));
     // Most recent first.
     return [...list].sort((a, b) => b.createdAt - a.createdAt);
-  }, [doc.comments, statusFilter, textFilter]);
+  }, [doc.comments, matchesFilters, revealed.id, revealed.retainedIds]);
 
   const counts = useMemo(() => {
     let active = 0;
@@ -44,15 +47,6 @@ export function AllCommentsPanel({ embedded = false }: { embedded?: boolean }) {
     }
     return { active, resolved, total: doc.comments.length };
   }, [doc.comments]);
-
-  const navigate = (c: PsComment) => {
-    // Comments are scenario-scoped — switch to the comment's own scenario
-    // (falling back to show-all if it's somehow missing).
-    const hasScenario = doc.scenarios.some((s) => s.id === c.scenarioId);
-    setActiveScenarioId(hasScenario ? c.scenarioId : null);
-    setSelection({ kind: c.targetKind, id: c.targetId });
-    setFocusTarget({ kind: c.targetKind, id: c.targetId });
-  };
 
   return (
     <div className="ps-allcomments">
@@ -75,33 +69,39 @@ export function AllCommentsPanel({ embedded = false }: { embedded?: boolean }) {
           <FilterPill
             label={`All (${counts.total})`}
             active={statusFilter === "all"}
-            onClick={() => setStatusFilter("all")}
+            onClick={() => { revealed.clear(); setStatusFilter("all"); }}
           />
           <FilterPill
             label={`Active (${counts.active})`}
             active={statusFilter === "active"}
-            onClick={() => setStatusFilter("active")}
+            onClick={() => { revealed.clear(); setStatusFilter("active"); }}
           />
           <FilterPill
             label={`Resolved (${counts.resolved})`}
             active={statusFilter === "resolved"}
-            onClick={() => setStatusFilter("resolved")}
+            onClick={() => { revealed.clear(); setStatusFilter("resolved"); }}
           />
         </div>
         <input
           type="search"
           placeholder="Search comments…"
           value={textFilter}
-          onChange={(e) => setTextFilter(e.target.value)}
+          onChange={(e) => { revealed.clear(); setTextFilter(e.target.value); }}
         />
       </div>
 
       <div className="ps-allcomments-body">
+        {revealedComment && !matchesFilters(revealedComment) && (
+          <p className="ps-description-below">The linked comment is shown without changing your filters.</p>
+        )}
         {items.length === 0 ? (
           <p className="ps-empty">No comments match.</p>
         ) : (
           items.map((c) => (
-            <CommentRow key={c.id} comment={c} onNavigate={() => navigate(c)} />
+            <CommentRow key={c.id} comment={c}
+              onNavigate={trigger => visitElement({ kind: c.targetKind, id: c.targetId }, {
+                source: { kind: "comment", id: c.id }, trigger, requiredScenarioId: c.scenarioId,
+              })} />
           ))
         )}
       </div>
@@ -135,7 +135,7 @@ function CommentRow({
   onNavigate,
 }: {
   comment: PsComment;
-  onNavigate: () => void;
+  onNavigate: (trigger: HTMLButtonElement) => void;
 }) {
   const {
     doc,
@@ -152,6 +152,9 @@ function CommentRow({
   const [textDraft, setTextDraft] = useState(comment.text);
   useEffect(() => setTextDraft(comment.text), [comment.text]);
   const [replyDraft, setReplyDraft] = useState("");
+  const targetAvailable = reviewElementExists(doc, { kind: comment.targetKind, id: comment.targetId })
+    && doc.scenarios.some(scenario => scenario.id === comment.scenarioId &&
+      (comment.targetKind === "node" ? scenario.nodeIds : scenario.edgeIds).includes(comment.targetId));
 
   let targetLabel = "";
   if (comment.targetKind === "node") {
@@ -193,13 +196,16 @@ function CommentRow({
 
   return (
     <div
+      data-review-kind="comment"
+      data-review-id={comment.id}
       className={`ps-allcomments-row ps-allissues-row ps-allcomments-${comment.status.toLowerCase()}`}
     >
       <button
         type="button"
         className="ps-allissues-rowhead"
-        onClick={onNavigate}
-        title="Click to navigate to this item"
+        onClick={event => onNavigate(event.currentTarget)}
+        disabled={!targetAvailable}
+        title={targetAvailable ? "Click to navigate to this item" : "Target no longer available in this scenario"}
       >
         <div className="ps-allcomments-row-head">
           <span
@@ -226,6 +232,7 @@ function CommentRow({
           </div>
         )}
       </button>
+      {!targetAvailable && <p className="ps-description-below">Target no longer available in this scenario.</p>}
 
       <div
         className="ps-allissues-actions"

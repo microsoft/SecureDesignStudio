@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { IssueRow } from "./IssueRow";
 import { AddThreatNote } from "./AddThreatNote";
 import { FindingsExportButton } from "./FindingsExportButton";
 import { ISSUE_NOT_EVALUATED_LABELS, type PsIssue } from "../types";
+import { reviewElementExists, useReviewNavigation, useRevealedReviewRecord } from "../reviewNavigation";
 
 type StatusFilter = "all" | "active" | "resolved";
 
@@ -12,11 +13,10 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
     doc,
     activeScenarioId,
     selection,
-    setActiveScenarioId,
-    setSelection,
     setAllIssuesViewOpen,
-    setFocusTarget,
   } = useStore();
+  const { visitElement } = useReviewNavigation();
+  const revealed = useRevealedReviewRecord("issue");
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [textFilter, setTextFilter] = useState("");
@@ -42,24 +42,27 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
     }
   }, [selection, doc.issues, selectedIssueId]);
 
-  const items = useMemo(() => {
-    const list = doc.issues.filter((i) => {
-      if (statusFilter === "active" && i.status !== "Active") return false;
-      if (statusFilter === "resolved" && i.status !== "Resolved") return false;
-      if (textFilter.trim()) {
-        const q = textFilter.trim().toLowerCase();
-        if (
-          !i.title.toLowerCase().includes(q) &&
-          !i.description.toLowerCase().includes(q) &&
-          !(i.justification ?? "").toLowerCase().includes(q) &&
-          !(i.kind && i.notEvaluatedReason && ISSUE_NOT_EVALUATED_LABELS[i.notEvaluatedReason].toLowerCase().includes(q)) &&
-          !i.replies.some((r) => r.text.toLowerCase().includes(q))
-        ) {
-          return false;
-        }
+  const matchesFilters = useCallback((i: PsIssue) => {
+    if (statusFilter === "active" && i.status !== "Active") return false;
+    if (statusFilter === "resolved" && i.status !== "Resolved") return false;
+    if (textFilter.trim()) {
+      const q = textFilter.trim().toLowerCase();
+      if (
+        !i.title.toLowerCase().includes(q) &&
+        !i.description.toLowerCase().includes(q) &&
+        !(i.justification ?? "").toLowerCase().includes(q) &&
+        !(i.kind && i.notEvaluatedReason && ISSUE_NOT_EVALUATED_LABELS[i.notEvaluatedReason].toLowerCase().includes(q)) &&
+        !i.replies.some((r) => r.text.toLowerCase().includes(q))
+      ) {
+        return false;
       }
-      return true;
-    });
+    }
+    return true;
+  }, [statusFilter, textFilter]);
+  const revealedIssue = doc.issues.find(issue => issue.id === revealed.id);
+
+  const items = useMemo(() => {
+    const list = doc.issues.filter(i => i.id === revealed.id || revealed.retainedIds.has(i.id) || matchesFilters(i));
 
     // Buckets: nodes first, then edges (in edge-number order), then anything
     // else (defensive — targetKind is currently node|edge only).
@@ -111,8 +114,9 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
     doc.edges,
     doc.scenarios,
     activeScenarioId,
-    statusFilter,
-    textFilter,
+    matchesFilters,
+    revealed.id,
+    revealed.retainedIds,
   ]);
 
   const counts = useMemo(() => {
@@ -127,16 +131,10 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
     return { active, resolved, notEvaluated, total: doc.issues.length };
   }, [doc.issues]);
 
-  const navigate = (i: PsIssue) => {
-    // Issues may span multiple scenarios — per the spec, when more than one
-    // could be selected, always pick the first.
-    const firstScenarioId = i.scenarioIds.find((sid) =>
-      doc.scenarios.some((s) => s.id === sid)
-    );
-    setActiveScenarioId(firstScenarioId ?? null);
-    setSelection({ kind: i.targetKind, id: i.targetId });
-    setFocusTarget({ kind: i.targetKind, id: i.targetId });
-    setSelectedIssueId(i.id);
+  const navigate = (i: PsIssue, trigger: HTMLButtonElement) => {
+    if (visitElement({ kind: i.targetKind, id: i.targetId }, {
+      source: { kind: "issue", id: i.id }, trigger, scenarioIds: i.scenarioIds,
+    })) setSelectedIssueId(i.id);
   };
 
   return (
@@ -161,28 +159,31 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
           <FilterPill
             label={`All (${counts.total})`}
             active={statusFilter === "all"}
-            onClick={() => setStatusFilter("all")}
+            onClick={() => { revealed.clear(); setStatusFilter("all"); }}
           />
           <FilterPill
             label={`Active (${counts.active})`}
             active={statusFilter === "active"}
-            onClick={() => setStatusFilter("active")}
+            onClick={() => { revealed.clear(); setStatusFilter("active"); }}
           />
           <FilterPill
             label={`Resolved (${counts.resolved})`}
             active={statusFilter === "resolved"}
-            onClick={() => setStatusFilter("resolved")}
+            onClick={() => { revealed.clear(); setStatusFilter("resolved"); }}
           />
         </div>
         <input
           type="search"
           placeholder="Search issues…"
           value={textFilter}
-          onChange={(e) => setTextFilter(e.target.value)}
+          onChange={(e) => { revealed.clear(); setTextFilter(e.target.value); }}
         />
       </div>
 
       <div className="ps-allcomments-body">
+        {revealedIssue && !matchesFilters(revealedIssue) && (
+          <p className="ps-description-below">The linked issue is shown without changing your filters.</p>
+        )}
         {selection && (selection.kind === "node" || selection.kind === "edge") ? (
           <AddThreatNote targetKind={selection.kind} targetId={selection.id} />
         ) : <p className="ps-description-below">Select a node or flow to add a threat note.</p>}
@@ -198,8 +199,9 @@ export function AllIssuesPanel({ embedded = false }: { embedded?: boolean }) {
             <IssueRow
               key={i.id}
               issue={i}
-              onNavigate={() => navigate(i)}
-              selected={i.id === selectedIssueId}
+              onNavigate={reviewElementExists(doc, { kind: i.targetKind, id: i.targetId }) ? trigger => navigate(i, trigger) : undefined}
+              selected={i.id === selectedIssueId || i.id === revealed.id}
+              revealRequest={i.id === revealed.id ? revealed.request : undefined}
             />
           ))
         )}

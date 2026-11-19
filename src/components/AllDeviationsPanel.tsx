@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import { reviewElementExists, useReviewNavigation, useRevealedReviewRecord } from "../reviewNavigation";
 import {
   deviationKindLabel,
   catalogDefinitionChoices,
@@ -44,10 +45,9 @@ export function AllDeviationsPanel() {
     availableCatalogDefinitions,
     addDeviation,
     updateDeviation,
-    setActiveScenarioId,
-    setSelection,
-    setFocusTarget,
   } = useStore();
+  const { visitElement, visitRecord } = useReviewNavigation();
+  const revealed = useRevealedReviewRecord("deviation");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [textFilter, setTextFilter] = useState("");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -63,32 +63,35 @@ export function AllDeviationsPanel() {
     };
   }, [doc.deviations]);
 
-  const items = useMemo(() => {
+  const matchesFilters = useCallback((item: PsDeviation) => {
     const query = textFilter.trim().toLowerCase();
-    return doc.deviations
-      .filter((item) => {
-        if (statusFilter === "active" && item.status !== "Active") return false;
-        if (statusFilter === "resolved" && item.status !== "Resolved") return false;
-        if (!query) return true;
-        return [
-          item.key,
-          item.title,
-          item.description,
-          item.explanation,
-          ...item.evidenceIds,
-          ...(item.sampleCalls ?? []).flatMap((call) => [
-            call.source,
-            call.destination,
-            String(call.count),
-          ]),
-        ].some((value) => value.toLowerCase().includes(query));
-      })
-      .sort((left, right) => right.updatedAt - left.updatedAt);
-  }, [doc.deviations, statusFilter, textFilter]);
+    if (statusFilter === "active" && item.status !== "Active") return false;
+    if (statusFilter === "resolved" && item.status !== "Resolved") return false;
+    if (!query) return true;
+    return [
+      item.key,
+      item.title,
+      item.description,
+      item.explanation,
+      ...item.evidenceIds,
+      ...(item.sampleCalls ?? []).flatMap((call) => [
+        call.source,
+        call.destination,
+        String(call.count),
+      ]),
+    ].some((value) => value.toLowerCase().includes(query));
+  }, [statusFilter, textFilter]);
+  const revealedDeviation = doc.deviations.find(deviation => deviation.id === revealed.id);
 
-  const createDeviation = () => {
+  const items = useMemo(() => {
+    return doc.deviations
+      .filter(item => item.id === revealed.id || revealed.retainedIds.has(item.id) || matchesFilters(item))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  }, [doc.deviations, matchesFilters, revealed.id, revealed.retainedIds]);
+
+  const createDeviation = (trigger: HTMLButtonElement) => {
     try {
-      addDeviation({
+      const created = addDeviation({
         ...draft,
         description: draft.description.trim(),
         evidenceIds: evidenceIds(draft.evidenceIds),
@@ -98,6 +101,7 @@ export function AllDeviationsPanel() {
       setDraft(EMPTY_DRAFT);
       setAdding(false);
       setError("");
+      visitRecord({ kind: "deviation", id: created.id }, trigger);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create deviation.");
     }
@@ -115,7 +119,7 @@ export function AllDeviationsPanel() {
       {adding && (
         <div className="ps-deviation-create">
           <DeviationFields draft={draft} setDraft={setDraft} />
-          <button type="button" onClick={createDeviation}>
+          <button type="button" onClick={event => createDeviation(event.currentTarget)}>
             Create deviation
           </button>
         </div>
@@ -132,28 +136,31 @@ export function AllDeviationsPanel() {
           <FilterPill
             label={`All (${counts.total})`}
             active={statusFilter === "all"}
-            onClick={() => setStatusFilter("all")}
+            onClick={() => { revealed.clear(); setStatusFilter("all"); }}
           />
           <FilterPill
             label={`Active (${counts.active})`}
             active={statusFilter === "active"}
-            onClick={() => setStatusFilter("active")}
+            onClick={() => { revealed.clear(); setStatusFilter("active"); }}
           />
           <FilterPill
             label={`Resolved (${counts.resolved})`}
             active={statusFilter === "resolved"}
-            onClick={() => setStatusFilter("resolved")}
+            onClick={() => { revealed.clear(); setStatusFilter("resolved"); }}
           />
         </div>
         <input
           type="search"
           placeholder="Search deviations…"
           value={textFilter}
-          onChange={(event) => setTextFilter(event.target.value)}
+          onChange={(event) => { revealed.clear(); setTextFilter(event.target.value); }}
         />
       </div>
 
       <div className="ps-allcomments-body">
+        {revealedDeviation && !matchesFilters(revealedDeviation) && (
+          <p className="ps-description-below">The linked deviation is shown without changing your filters.</p>
+        )}
         {items.length === 0 ? (
           <p className="ps-empty">No deviations match.</p>
         ) : (
@@ -161,22 +168,17 @@ export function AllDeviationsPanel() {
             <DeviationRow
               key={deviation.id}
               deviation={deviation}
+              revealed={deviation.id === revealed.id}
               onUpdate={(explanation) =>
                 updateDeviation(deviation.id, { explanation })
               }
               onNavigate={
                 deviation.targetKind && deviation.targetId
-                  ? () => {
-                      const scenarioId = deviation.scenarioIds.find((id) =>
-                        doc.scenarios.some((scenario) => scenario.id === id),
-                      );
-                      if (scenarioId) setActiveScenarioId(scenarioId);
-                      const target = {
-                        kind: deviation.targetKind!,
-                        id: deviation.targetId!,
-                      };
-                      setSelection(target);
-                      setFocusTarget(target);
+                  ? trigger => {
+                      if (!deviation.targetKind || !deviation.targetId) return;
+                      visitElement({ kind: deviation.targetKind, id: deviation.targetId }, {
+                        source: { kind: "deviation", id: deviation.id }, trigger, scenarioIds: deviation.scenarioIds,
+                      });
                     }
                   : undefined
               }
@@ -192,10 +194,12 @@ function DeviationRow({
   deviation,
   onUpdate,
   onNavigate,
+  revealed,
 }: {
   deviation: PsDeviation;
   onUpdate: (explanation: string) => void;
-  onNavigate?: () => void;
+  onNavigate?: (trigger: HTMLButtonElement) => void;
+  revealed?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const { doc, availableCatalogDefinitions } = useStore();
@@ -203,6 +207,8 @@ function DeviationRow({
   const [explanation, setExplanation] = useState(deviation.explanation);
   const [showSampleCalls, setShowSampleCalls] = useState(false);
   const sampleCallsButtonRef = useRef<HTMLButtonElement>(null);
+  const targetAvailable = !!deviation.targetKind && !!deviation.targetId
+    && reviewElementExists(doc, { kind: deviation.targetKind, id: deviation.targetId });
 
   const save = () => {
     try {
@@ -233,9 +239,11 @@ function DeviationRow({
 
   return (
     <article
+      data-review-kind="deviation"
+      data-review-id={deviation.id}
       className={`ps-allcomments-row ps-deviation-row${
         deviation.status === "Resolved" ? " ps-allcomments-resolved" : ""
-      }`}
+      }${revealed ? " ps-review-record-revealed" : ""}`}
     >
       {editing ? (
         <>
@@ -272,7 +280,10 @@ function DeviationRow({
             <strong>Explanation:</strong> {deviation.explanation}
           </p>
           <div className="ps-deviation-actions">
-            {onNavigate && <button type="button" onClick={onNavigate}>View target</button>}
+            {onNavigate && <button type="button" disabled={!targetAvailable}
+              title={targetAvailable ? undefined : "Target no longer available"}
+              onClick={event => onNavigate(event.currentTarget)}>View target</button>}
+            {onNavigate && !targetAvailable && <span>Target no longer available.</span>}
             {deviation.kind === "network-endpoint" &&
               deviation.sampleCalls &&
               deviation.sampleCalls.length > 0 && (
@@ -284,7 +295,7 @@ function DeviationRow({
                   View sample calls
                 </button>
               )}
-            <button type="button" onClick={openEditor}>Explain</button>
+            <button type="button" data-review-focus onClick={openEditor}>Explain</button>
           </div>
           {showSampleCalls && deviation.sampleCalls && (
             <SampleCallsDialog deviation={deviation} onClose={closeSampleCalls} />

@@ -2,18 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from "react-dom";
 import { useUiShell, type InspectorPresentation } from "../uiShell";
 import { FindingsExportButton } from "./FindingsExportButton";
+import { captureInspectorPlace, restoreInspectorPlace, type InspectorPlace } from "../reviewNavigation";
 
 type Frame = { left: number; top: number; width: number; height: number };
-type ScrollPlace = { element: HTMLElement; top: number; left: number; finding?: string; offset?: number };
-type ReviewPlace = {
-  scroll: ScrollPlace[];
-  focus: HTMLElement | null;
-  caret?: { start: number; end: number; direction: "forward" | "backward" | "none" };
-};
-
-function textControl(element: HTMLElement | null): element is HTMLInputElement | HTMLTextAreaElement {
-  return element?.tagName === "INPUT" || element?.tagName === "TEXTAREA";
-}
 
 export function clampAssistantFrame(frame: Frame, viewport: { width: number; height: number }): Frame {
   const maxWidth = Math.max(1, viewport.width - 16);
@@ -53,58 +44,18 @@ export function InspectorSurface({ children, className = "", dockWidth }: {
   const gestureCleanup = useRef<(() => void) | null>(null);
   const currentTab = useRef(inspectorActiveTab);
   currentTab.current = inspectorActiveTab;
-  const savedPlace = useRef<ReviewPlace>({ scroll: [], focus: null });
+  const savedPlace = useRef<InspectorPlace>({ scroll: [], focus: null });
   const restoreTicket = useRef(0);
   const popupSize = useRef({ width: 1000, height: 760 });
 
-  const capturePlace = (): ReviewPlace => {
-    const scrollers = [...host.querySelectorAll<HTMLElement>("*")]
-      .filter(element => element.clientHeight > 0 && (
-        element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth
-        || element.hasAttribute("data-assistant-scroll")
-      ));
-    if (!scrollers.length) return savedPlace.current;
-    const active = host.ownerDocument.activeElement;
-    const focus = active && host.contains(active) && "focus" in active && typeof active.focus === "function"
-      ? active as HTMLElement : null;
-    const scroll = new Map(savedPlace.current.scroll
-      .filter(saved => host.contains(saved.element)).map(saved => [saved.element, saved]));
-    for (const element of scrollers) {
-      const bounds = element.getBoundingClientRect();
-      const anchor = [...element.querySelectorAll<HTMLElement>("[data-finding-id]")]
-        .find(row => row.getBoundingClientRect().bottom > bounds.top && row.getBoundingClientRect().top < bounds.bottom);
-      scroll.set(element, {
-        element, top: element.scrollTop, left: element.scrollLeft,
-        ...(anchor ? { finding: anchor.dataset.findingId, offset: anchor.getBoundingClientRect().top - bounds.top } : {}),
-      });
-    }
-    const place: ReviewPlace = { focus, scroll: [...scroll.values()] };
-    if (textControl(focus) && typeof focus.selectionStart === "number" && typeof focus.selectionEnd === "number") {
-      place.caret = { start: focus.selectionStart, end: focus.selectionEnd, direction: focus.selectionDirection ?? "none" };
-    }
+  const capturePlace = (): InspectorPlace => {
+    const place = captureInspectorPlace(host, savedPlace.current);
     savedPlace.current = place;
     return place;
   };
 
-  const restorePlace = (place: ReviewPlace, restoreFocus = true) => {
-    for (const saved of place.scroll) {
-      const element = saved.element;
-      if (!host.contains(element) || !element.clientHeight) continue;
-      element.scrollTop = saved.top;
-      element.scrollLeft = saved.left;
-      const anchor = saved.finding
-        ? [...element.querySelectorAll<HTMLElement>("[data-finding-id]")].find(row => row.dataset.findingId === saved.finding)
-        : undefined;
-      if (anchor) element.scrollTop += anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - (saved.offset ?? 0);
-    }
-    if (restoreFocus && place.focus?.isConnected && host.contains(place.focus)) {
-      const focus = place.focus.matches(":disabled")
-        ? host.querySelector<HTMLElement>(".ps-assistant-window-actions button:not(:disabled)") : place.focus;
-      focus?.focus({ preventScroll: true });
-      if (focus === place.focus && place.caret && textControl(place.focus)) {
-        place.focus.setSelectionRange(place.caret.start, place.caret.end, place.caret.direction);
-      }
-    }
+  const restorePlace = (place: InspectorPlace, restoreFocus = true) => {
+    restoreInspectorPlace(host, place, restoreFocus);
     savedPlace.current = place;
   };
 
@@ -131,7 +82,7 @@ export function InspectorSurface({ children, className = "", dockWidth }: {
     if (target) moveHost(target);
     releasePopup();
     gestureCleanup.current?.();
-    openInspector(currentTab.current);
+    openInspector(currentTab.current, undefined, { preserveReviewJourney: true, focus: false });
     setMode("docked");
     setError("");
   };
@@ -206,7 +157,7 @@ export function InspectorSurface({ children, className = "", dockWidth }: {
         popup.current = null;
         popupCleanup.current?.();
         popupCleanup.current = null;
-        openInspector(currentTab.current);
+        openInspector(currentTab.current, undefined, { preserveReviewJourney: true, focus: false });
         setMode("docked");
       };
       const resized = () => {
@@ -236,7 +187,7 @@ export function InspectorSurface({ children, className = "", dockWidth }: {
       if (parking.current && host.ownerDocument !== document) moveHost(parking.current, place);
       releasePopup();
       if (!opened.closed) opened.close();
-      openInspector(currentTab.current);
+      openInspector(currentTab.current, undefined, { preserveReviewJourney: true, focus: false });
       setMode("docked");
       setError(cause instanceof Error ? cause.message : "The separate inspector window could not be opened.");
     }
