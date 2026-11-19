@@ -16,7 +16,7 @@ import {
 } from "../designAssistant";
 import { useUiShell } from "../uiShell";
 import { reviewElementExists, useReviewNavigation, type ReviewSource } from "../reviewNavigation";
-import type { PsDocument } from "../types";
+import type { PsFinding } from "../types";
 import { useAiProvider } from "../aiProvider";
 import { AiProviderSelector } from "./AiProviderSelector";
 import {
@@ -59,14 +59,6 @@ const SUGGESTED_PROMPT_GROUPS = [
 
 function messageId(): string {
   return `assistant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function findingNavigationTargets(findings: AssistantFinding[], doc: PsDocument) {
-  // Resolve once per response; deletion must not promote a different reference.
-  return new Map(findings.map(finding => [finding.id, {
-    focus: finding.references.find(reference => reviewElementExists(doc, reference)),
-    issue: finding.references.find(reference => (reference.kind === "node" || reference.kind === "edge") && reviewElementExists(doc, reference)),
-  }]));
 }
 
 const SEVERITY_SCORE = { critical: 92, high: 76, medium: 54, low: 28 } as const;
@@ -131,11 +123,11 @@ export function DesignAssistantPanel({
     createWorkItem,
     updateWorkItem,
     assistantFindings: findings,
-    setAssistantFindings: setFindings,
     acceptedFindingIds,
-    setAcceptedFindingIds,
     assistantAnalysis,
-    setAssistantAnalysis,
+    saveAssistantReview,
+    updateFinding,
+    deleteFinding,
   } = useStore();
   const { openInspector, endReviewNavigation } = useUiShell();
   const { visitElement, visitRecord } = useReviewNavigation();
@@ -145,7 +137,6 @@ export function DesignAssistantPanel({
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
-  const [navigationTargets, setNavigationTargets] = useState(() => findingNavigationTargets(findings, doc));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -163,11 +154,7 @@ export function DesignAssistantPanel({
     setBusy(false);
     setMessages([]);
     setQuestion("");
-    setFindings([]);
-    setAssistantAnalysis(null);
-    setAcceptedFindingIds(new Set());
     setSelectedFindingId(null);
-    setNavigationTargets(new Map());
     modeScroll.current = { analyze: 0, chat: 0 };
     conversationScroll.current = 0;
     simulation.reset();
@@ -189,11 +176,7 @@ export function DesignAssistantPanel({
     providerRef.current = aiProvider.provider;
     endReviewNavigation("assistant", "The AI provider changed. Its previous return context is no longer available.");
     setMessages([]);
-    setFindings([]);
-    setAssistantAnalysis(null);
-    setAcceptedFindingIds(new Set());
     setSelectedFindingId(null);
-    setNavigationTargets(new Map());
     simulation.reset();
     setError(null);
   }, [aiProvider.provider]);
@@ -259,8 +242,8 @@ export function DesignAssistantPanel({
     }
   };
 
-  const acceptAsIssue = (finding: AssistantFinding, trigger: HTMLButtonElement) => {
-    const target = navigationTargets.get(finding.id)?.issue;
+  const acceptAsIssue = (finding: PsFinding, trigger: HTMLButtonElement) => {
+    const target = finding.issueReference;
     if (!target || (target.kind !== "node" && target.kind !== "edge") || !referenceExists(target)) {
       setError("The original issue target is no longer available. Run AI Analysis again before creating an issue.");
       return;
@@ -278,14 +261,42 @@ export function DesignAssistantPanel({
       undefined,
       finding.guidanceReferences,
     );
-    setAcceptedFindingIds((current) => new Set(current).add(finding.id));
+    updateFinding(finding.id, { accepted: true });
     visitRecord({ kind: "issue", id: created.id }, trigger, { kind: "finding", id: finding.id });
   };
 
-  const acceptAsWorkItem = (finding: AssistantFinding, trigger: HTMLButtonElement) => {
+  const acceptAsWorkItem = (finding: PsFinding, trigger: HTMLButtonElement) => {
     const created = createWorkItem(workItemFromFinding(finding, assistantAnalysis));
-    setAcceptedFindingIds((current) => new Set(current).add(finding.id));
+    updateFinding(finding.id, { accepted: true });
     visitRecord({ kind: "work", id: created.id }, trigger, { kind: "finding", id: finding.id });
+  };
+
+  const changeFinding = (id: string, patch: Parameters<typeof updateFinding>[1]) => {
+    try {
+      updateFinding(id, patch);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update finding.");
+    }
+  };
+
+  const removeFinding = (finding: PsFinding, trigger: HTMLButtonElement) => {
+    const owner = trigger.ownerDocument.defaultView ?? window;
+    if (!owner.confirm("Delete this finding? Issues and work items already created from it will be kept.")) return;
+    try {
+      const index = findings.findIndex(item => item.id === finding.id);
+      const adjacent = findings[index + 1] ?? findings[index - 1];
+      deleteFinding(finding.id);
+      setError(null);
+      owner.requestAnimationFrame(() => {
+        const root = analysisRoot.current;
+        const next = Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-finding-status]") ?? [])
+          .find(button => button.dataset.findingStatus === adjacent?.id);
+        (next ?? root?.querySelector<HTMLElement>("[data-findings-heading]"))?.focus();
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to delete finding.");
+    }
   };
 
   const runRequest = async (requestMode: AssistantMode, prompt: string) => {
@@ -326,14 +337,11 @@ export function DesignAssistantPanel({
           },
         ]);
       } else {
-        endReviewNavigation("assistant", "The AI review changed. Its previous return context is no longer available.");
-        setNavigationTargets(findingNavigationTargets(response.findings, doc));
-        setFindings(response.findings);
-        setAssistantAnalysis({
-          documentSessionId, scenarioId: requestedScenario.id, scenarioName: requestedScenario.name,
+        saveAssistantReview(response.findings, {
+          scenarioId: requestedScenario.id, scenarioName: requestedScenario.name,
           createdAt: Date.now(), answer: response.answer,
-        });
-        setAcceptedFindingIds(new Set());
+        }, doc);
+        endReviewNavigation("assistant", "The AI review changed. Its previous return context is no longer available.");
         setSelectedFindingId(null);
       }
       return response;
@@ -356,18 +364,22 @@ export function DesignAssistantPanel({
 
   const simulateBreach = async () => {
     if (!context) return;
-    let availableFindings = findings;
-    if (availableFindings.length === 0 || (assistantAnalysis && assistantAnalysis.scenarioId !== activeScenario?.id)) {
+    let availableFindings: AssistantFinding[] = findings.filter(finding => finding.status === "Active");
+    if (!assistantAnalysis || assistantAnalysis.scenarioId !== activeScenario?.id) {
       const response = await runRequest(
         "analyze",
         "Find the most plausible attack path from an entry point to sensitive data. Return references to every involved node and edge, plus concrete mitigations.",
       );
-      availableFindings = response?.findings ?? [];
+      if (!response) return;
+      availableFindings = response.findings;
     }
     const finding = [...availableFindings].sort(
       (left, right) => SEVERITY_ORDER[right.severity] - SEVERITY_ORDER[left.severity],
     )[0];
-    if (!finding) return;
+    if (!finding) {
+      setError("There are no active findings to simulate. Run Analyze model to create a new review.");
+      return;
+    }
     const steps = buildConnectedPath(finding, context.nodes, context.edges);
     if (steps.length === 0) {
       setError("Add at least one connected flow to simulate a breach.");
@@ -664,17 +676,21 @@ export function DesignAssistantPanel({
               )}
             </section>
           )}
-          {findings.length > 0 && (
+          {(assistantAnalysis || doc.findings !== undefined) && (
             <div className="ps-assistant-findings" aria-live="polite">
-              <h3>AI findings <span>{findings.length}</span></h3>
+              <h3 data-findings-heading tabIndex={-1}>AI findings <span>{findings.length}</span></h3>
+              {findings.length === 0 && <p className="ps-empty">No saved AI findings.</p>}
               {findings.map((finding, index) => {
-                const originalTarget = navigationTargets.get(finding.id)?.focus;
+                const originalTarget = finding.focusReference;
                 const target = originalTarget && referenceExists(originalTarget) ? originalTarget : undefined;
-                const issueTarget = navigationTargets.get(finding.id)?.issue;
+                const issueTarget = finding.issueReference;
                 const selected = finding.id === selectedFindingId;
                 return (
                   <article key={finding.id} data-finding-id={finding.id} data-review-kind="finding" data-review-id={finding.id}
                     className={`ps-assistant-finding${selected ? " ps-assistant-finding-selected" : ""}`}>
+                    <span className={`ps-comment-status ps-comment-status-${finding.status.toLowerCase()}`}>
+                      {finding.status}
+                    </span>
                     <button
                       type="button"
                       className="ps-assistant-finding-target"
@@ -703,8 +719,7 @@ export function DesignAssistantPanel({
                             onChange={event => {
                               const type = event.target.value;
                               if (type === "" || isWorkItemType(type)) {
-                                setFindings(current => current.map(item => item.id === finding.id
-                                  ? { ...item, workItemType: type || undefined } : item));
+                                changeFinding(finding.id, { workItemType: type || undefined });
                               }
                             }}>
                             <option value="">Not set</option>
@@ -716,7 +731,7 @@ export function DesignAssistantPanel({
                           <input id={`${classificationId}-weakness-${index}`} type="text" value={finding.weaknessType ?? ""} placeholder="Optional (blank allowed)"
                             onChange={event => {
                               const weaknessType = event.target.value || undefined;
-                              setFindings(current => current.map(item => item.id === finding.id ? { ...item, weaknessType } : item));
+                              changeFinding(finding.id, { weaknessType });
                             }} />
                         </div>
                         <p>These choices copy into the new Work item. Type and Severity are required for Bugs and Tasks; Weakness Type is optional and may be blank. You can finish classification in Work after creation.</p>
@@ -735,6 +750,14 @@ export function DesignAssistantPanel({
                       ))}
                     </div>}
                     <div className="ps-assistant-actions">
+                      <button type="button" data-finding-status={finding.id} disabled={busy}
+                        onClick={() => changeFinding(finding.id, { status: finding.status === "Active" ? "Resolved" : "Active" })}>
+                        {finding.status === "Active" ? "Resolve" : "Reopen"}
+                      </button>
+                      <button type="button" className="ps-danger" disabled={busy}
+                        onClick={event => removeFinding(finding, event.currentTarget)}>
+                        Delete
+                      </button>
                       {target && (
                         <button
                           type="button"

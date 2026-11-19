@@ -42,6 +42,7 @@ export interface AssistantResponse {
 }
 
 export interface AssistantAnalysisSnapshot {
+  id?: string;
   documentSessionId: number;
   scenarioId: string;
   scenarioName: string;

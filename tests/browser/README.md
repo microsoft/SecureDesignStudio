@@ -70,6 +70,16 @@ including failed cases, as seven-day workflow artifacts.
 
 ## What is actually covered
 
+Saved-finding contracts cover Resolve/Reopen and confirmed Delete for every
+reference kind, missing targets and reference-free results; exact document
+Undo/Redo, native Save/Open and autosave recovery; 320px keyboard controls,
+popup-owned confirmation and focus after deleting the final result.
+Configured synthetic Assistant checks also cover persisted acceptance,
+independent Issue/Work copies, undoable reanalysis and exported standalone
+recovery. Pure contracts cover strict normalization, safe embedded payloads,
+and concurrent Yjs edits and reviews.
+No live AI quality, live-room or participant-usability result is implied.
+
 Declutter contracts exercise measured full-label spacing, visible-scenario
 scope, saved geometry, unchanged model meaning, immediate pointer dragging,
 separate drag/layout Undo, Redo, native save/open and autosave reload. They

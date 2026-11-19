@@ -22,6 +22,7 @@ import {
   type PsDocument,
   type PsEdge,
   type PsIssue,
+  type PsFinding,
   type PsNode,
   type PsWorkItem,
   type Scenario,
@@ -30,6 +31,7 @@ import {
   type CatalogDefinitionSnapshot,
 } from "../types";
 import { normalizeDoc } from "../store";
+import { findingRecordKey, normalizeFindings, normalizeFindingAnalysis } from "../findings";
 import { catalogDefinitionKey, validateCatalogDefinitions, withCatalogDefinitions } from "../catalogDefinitions";
 import type { ProtocolTypeDef } from "../protocols";
 import { validatePortableAuthenticationDefinitions } from "../authentication";
@@ -49,19 +51,21 @@ function jsonEqual(a: unknown, b: unknown): boolean {
 // CRDT update.
 function syncCollection<T extends { id: string }>(
   yMap: Y.Map<Y.Map<unknown>>,
-  items: readonly T[]
+  items: readonly T[],
+  keyFor: (item: T) => string = item => item.id,
 ) {
   const seenIds = new Set<string>();
   for (const item of items) {
-    seenIds.add(item.id);
-    let yItem = yMap.get(item.id);
+    const key = keyFor(item);
+    seenIds.add(key);
+    let yItem = yMap.get(key);
     if (!yItem) {
       yItem = new Y.Map();
       // Populate before inserting so observers see a complete record.
       for (const [k, v] of Object.entries(item)) {
         yItem.set(k, v);
       }
-      yMap.set(item.id, yItem);
+      yMap.set(key, yItem);
       continue;
     }
     // Update mutated fields.
@@ -160,6 +164,8 @@ export function reconcileLocalToY(
   // An absent optional field is not a deletion by a reader without catalog support.
   const definitions = doc.catalogDefinitions === undefined ? undefined
     : validateCatalogDefinitions(withCatalogDefinitions(doc, availableClassifications).catalogDefinitions);
+  const findings = normalizeFindings(doc.findings);
+  const findingAnalysis = normalizeFindingAnalysis(doc.findingAnalysis);
   const catalogMap = y.ydoc.getMap<unknown>("catalogDefinitions");
   y.ydoc.transact(() => {
     syncCollection(y.nodes, doc.nodes);
@@ -179,6 +185,17 @@ export function reconcileLocalToY(
     syncCollection(y.data, doc.data);
     syncCollection(y.comments, doc.comments);
     syncCollection(y.issues, doc.issues);
+    if (findings !== undefined) {
+      syncCollection(y.findings, findings, finding => findingRecordKey(finding.id, findingAnalysis));
+      if (y.meta.get("findingsPresent") !== true) y.meta.set("findingsPresent", true);
+    }
+    if (findings !== undefined || findingAnalysis !== undefined) {
+      if (findingAnalysis !== undefined) {
+        if (!jsonEqual(y.meta.get("findingAnalysis"), findingAnalysis)) y.meta.set("findingAnalysis", findingAnalysis);
+      } else {
+        y.meta.delete("findingAnalysis");
+      }
+    }
     syncCollection(y.deviations, doc.deviations);
     syncCollection(y.workItems, doc.workItems);
     syncNodeTypeCollection(y.nodeTypes, doc.nodeTypes);
@@ -215,12 +232,16 @@ export function reconcileLocalToY(
 }
 
 // The current application owns complete document replacement (New/Open/history).
-// Unlike a legacy caller's partial representation, absence here means no notes.
+// Unlike a legacy caller's partial representation, absence here means no notes/review.
 export function reconcileCurrentDocumentToY(
   y: YShape, doc: PsDocument, availableClassifications?: readonly CatalogDefinitionSnapshot[],
 ): void {
-  reconcileLocalToY(y, doc.textAnnotations === undefined
-    ? { ...doc, textAnnotations: [] } : doc, availableClassifications);
+  reconcileLocalToY(y, {
+    ...doc, textAnnotations: doc.textAnnotations ?? [],
+    ...(doc.findings !== undefined || doc.findingAnalysis !== undefined || y.findings.size ||
+        y.meta.get("findingsPresent") === true || y.meta.has("findingAnalysis")
+      ? { findings: doc.findings ?? [] } : {}),
+  }, availableClassifications);
 }
 
 // Pull an item back out of Y.Map. Y.Map.toJSON() walks nested Y types,
@@ -243,6 +264,7 @@ function yMapToObject<T>(yMap: Y.Map<unknown>): T {
 export function buildDocFromY(y: YShape): PsDocument {
   assertAuthenticationVersion(y);
   const catalogDefinitions = readCatalogDefinitions(y);
+  const findingAnalysis = normalizeFindingAnalysis(y.meta.get("findingAnalysis"));
   const collect = <T>(m: Y.Map<Y.Map<unknown>>): T[] =>
     Array.from(m.values()).map((entry) => yMapToObject<T>(entry));
 
@@ -266,6 +288,12 @@ export function buildDocFromY(y: YShape): PsDocument {
     issues: collect<PsIssue>(y.issues).sort((a, b) =>
       a.id.localeCompare(b.id)
     ),
+    ...(y.findings.size || y.meta.get("findingsPresent") === true ? {
+      findings: Array.from(y.findings, ([key, entry]) => ({ key, finding: yMapToObject<PsFinding>(entry) }))
+        .filter(({ key, finding }) => key === findingRecordKey(finding.id, findingAnalysis))
+        .map(({ finding }) => finding).sort((a, b) => a.id.localeCompare(b.id)),
+    } : {}),
+    ...(findingAnalysis ? { findingAnalysis } : {}),
     deviations: collect<PsDeviation>(y.deviations).sort((a, b) =>
       a.id.localeCompare(b.id)
     ),

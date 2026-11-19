@@ -5578,6 +5578,10 @@ select {
   padding: 5px 8px;
 }
 
+.ps-assistant-actions button.ps-danger {
+  color: var(--ps-danger);
+}
+
 .ps-assistant-progress {
   padding: 8px 0;
   color: #616161;

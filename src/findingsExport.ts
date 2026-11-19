@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import type { AssistantAnalysisSnapshot, AssistantFinding } from "./designAssistant";
-import { ISSUE_NOT_EVALUATED_LABELS, type PsDocument } from "./types";
+import { ISSUE_NOT_EVALUATED_LABELS, type PsDocument, type PsFinding } from "./types";
 import { formatGuidanceReferences } from "./aiDesignGuidance";
 import type { ChangeItem } from "./diff";
 import { ADO_CSV_COLUMNS, type AdoWorkExport } from "./adoExport";
@@ -69,7 +69,7 @@ const STYLES = `${XML}<styleSheet xmlns="${SML}">
 
 export function createFindingsWorkbook(
   doc: PsDocument,
-  findings: readonly AssistantFinding[],
+  findings: readonly (AssistantFinding | PsFinding)[],
   acceptedIds: ReadonlySet<string>,
   analysis: AssistantAnalysisSnapshot | null,
   exportedAt = new Date(),
@@ -109,15 +109,15 @@ export function createFindingsWorkbook(
     },
     {
       name: "AI findings",
-      headers: ["Finding ID", "Severity", "Category", "Title", "Rationale", "Recommended action", "Accepted", "Analysis scenario", "References", "Guidance provenance", "Work Item Type", "Weakness Type"],
-      widths: [26, 13, 22, 42, 64, 64, 15, 32, 54, 64, 20, 55],
+      headers: ["Finding ID", "Severity", "Category", "Title", "Rationale", "Recommended action", "Accepted", "Analysis scenario", "References", "Guidance provenance", "Work Item Type", "Weakness Type", "Status"],
+      widths: [26, 13, 22, 42, 64, 64, 15, 32, 54, 64, 20, 55, 14],
       rows: findings.map(finding => [
         finding.id, finding.severity, finding.category, finding.title, finding.rationale, finding.recommendation,
         acceptedIds.has(finding.id) ? "Yes" : "No",
         analysis ? `${analysis.scenarioName} (${analysis.scenarioId})` : "Not recorded",
         finding.references.map(reference => `${reference.kind}: ${reference.label} (${reference.id})`).join("\n"),
         formatGuidanceReferences(finding.guidanceReferences).trim(),
-        finding.workItemType ?? "", finding.weaknessType ?? "",
+        finding.workItemType ?? "", finding.weaknessType ?? "", "status" in finding ? finding.status : "Active",
       ]),
     },
     {

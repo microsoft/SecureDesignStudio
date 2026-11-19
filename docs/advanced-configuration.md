@@ -447,10 +447,15 @@ personal/confidential sample values out of the model. Review AI evidence
 against source or deployment facts: this is not a live vulnerability database
 lookup or security certification.
 
-**Create issue** and **Create work item** explicitly copy a suggestion into
-the model. Chat and unaccepted findings are transient panel state, not
-durable review records. The deterministic **Review > Analyze** needs none of
-this service setup and remains a separate operation.
+Completed AI findings and their analysis snapshot are saved model data, including
+unaccepted findings, Active/Resolved status, classification and accepted-state
+feedback. Native files, autosave, standalone HTML and current collaboration peers
+retain them. Resolve/Reopen and confirmed Delete are undoable. **Create issue**
+and **Create work item** make separate saved copies; deleting a finding never
+deletes those copies. A new AI analysis replaces the saved review and can be
+undone. Chat, drafts, provider choice and return navigation remain transient or
+profile-local. The deterministic **Review > Analyze** needs none of this service
+setup and remains a separate operation.
 
 ## Collaboration
 

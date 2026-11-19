@@ -58,7 +58,7 @@ function open(bytes) {
 
 test("findings workbook exports every saved status/scenario and unaccepted AI result without mutating state", () => {
   const doc = fixture();
-  const findings = [finding, { ...finding, id: "f_second", title: "Not yet accepted" }];
+  const findings = [finding, { ...finding, id: "f_second", title: "Not yet accepted", status: "Resolved" }];
   const before = structuredClone({ doc, findings });
   const accepted = new Set(["f_first"]);
   const result = open(createFindingsWorkbook(doc, findings, accepted, source, when));
@@ -71,6 +71,8 @@ test("findings workbook exports every saved status/scenario and unaccepted AI re
   assert.equal(ai.length, 3);
   assert.equal(ai[1][6], "Yes");
   assert.equal(ai[2][6], "No");
+  assert.equal(ai[1][ai[0].indexOf("Status")], "Active");
+  assert.equal(ai[2][ai[0].indexOf("Status")], "Resolved");
   assert.equal(ai[1][7], "Original review scenario (s_review)");
   assert.match(ai[1][8], /Original flow name.*e_missing/);
   assert.match(ai[1][9], /Authentication ApiKey/);
