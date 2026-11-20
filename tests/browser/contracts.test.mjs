@@ -4,6 +4,7 @@ import { autosaveKey, modelFixture, unavailableIssueFixture, unavailableCatalogF
 import { startHarness, until } from "./harness.mjs";
 import { registerAuthenticationContracts } from "./authentication-contracts.mjs";
 import { registerAssistantLayoutContracts } from "./assistant-layout-contracts.mjs";
+import { registerFindingsContracts } from "./findings-contracts.mjs";
 import { registerClassificationContracts } from "./classification-contracts.mjs";
 import { registerClassificationEditorContracts } from "./classification-editor-contracts.mjs";
 import { registerLibraryContracts } from "./libraries-contracts.mjs";
@@ -51,6 +52,7 @@ async function exportModel(page) {
 
 registerAuthenticationContracts({ getHarness: () => harness, exportModel });
 registerAssistantLayoutContracts({ getHarness: () => harness });
+registerFindingsContracts({ getHarness: () => harness });
 registerClassificationContracts({ getHarness: () => harness, exportModel });
 registerClassificationEditorContracts({ getHarness: () => harness, exportModel });
 registerLibraryContracts({ getHarness: () => harness });
@@ -109,18 +111,20 @@ test("regression: saved findings resolve, reopen and delete with native and hist
       window.dispatchEvent(new Event("pagehide"));
       return JSON.parse(localStorage.getItem(key));
     }, autosaveKey);
-    const card = id => page.locator(`[data-finding-id="${id}"]`);
+    const card = id => page.locator(`.ps-finding-card[data-finding-id="${id}"]`);
     await upload(input);
     await settleNavigationNodes(page);
     await scenario(page).selectOption("s_primary");
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 4), "saved findings loaded");
+    await page.getByLabel("Findings status").selectOption("all");
+    await until(() => page.locator(".ps-finding-card").count().then(count => count === 4), "saved findings loaded");
     const before = (await saved()).doc;
     for (const finding of input.doc.findings) {
-      await card(finding.id).getByRole("button", { name: "Resolve", exact: true }).click();
-      await card(finding.id).getByText("Resolved", { exact: true }).waitFor();
+      const current = card(finding.id);
+      await current.getByRole("button", { name: "Resolve", exact: true }).click();
+      await current.getByText("Resolved", { exact: true }).waitFor();
       assert.equal((await saved()).doc.findings.find(item => item.id === finding.id).status, "Resolved");
-      await card(finding.id).getByRole("button", { name: "Reopen", exact: true }).click();
+      await current.getByRole("button", { name: "Reopen", exact: true }).click();
       assert.deepEqual((await saved()).doc, before, "Reopen changes only the chosen finding's review status");
     }
     const first = card("f_lifecycle_0");
@@ -157,9 +161,9 @@ test("regression: saved findings resolve, reopen and delete with native and hist
     await first.waitFor({ state: "detached" });
     const deleted = (await saved()).doc;
     assert.deepEqual(deleted, { ...resolved, findings: resolved.findings.slice(1) });
-    await until(() => card("f_lifecycle_1").getByRole("button", { name: "Resolve", exact: true })
+    await until(() => card("f_lifecycle_1").getByRole("button", { name: /^Focus finding:/ })
       .evaluate(control => control === control.ownerDocument.activeElement), "delete restores focus to the next finding");
-    assert.equal(await page.locator("#ps-inspector-tab-assistant .ps-inspector-tab-count").textContent(), "3");
+    assert.equal(await page.locator("#ps-inspector-tab-findings .ps-inspector-tab-count").textContent(), "3");
     await page.getByRole("button", { name: /^Undo/ }).click();
     assert.deepEqual((await saved()).doc, resolved, "Undo restores the complete deleted finding");
     await page.getByRole("button", { name: /^Redo/ }).click();
@@ -168,11 +172,11 @@ test("regression: saved findings resolve, reopen and delete with native and hist
     assert.deepEqual(exported.doc, deleted);
     await upload(exported);
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 3), "findings reopen");
+    await until(() => page.locator(".ps-finding-card").count().then(count => count === 3), "findings reopen");
     assert.deepEqual((await saved()).doc, deleted);
     await page.reload();
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 3), "findings recover from autosave");
+    await until(() => page.locator(".ps-finding-card").count().then(count => count === 3), "findings recover from autosave");
     assert.deepEqual((await saved()).doc, deleted);
     assert.equal(dialogs.length, 2);
     assert.deepEqual(unexpectedDialogs, []);
@@ -194,8 +198,9 @@ test("usability: finding lifecycle actions remain keyboard reachable in narrow a
     });
     await page.setViewportSize({ width: 320, height: 480 });
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    const last = page.locator('[data-finding-id="f_keyboard_2"]');
-    for (const name of ["Resolve", "Delete"]) {
+    await page.getByLabel("Findings status").selectOption("all");
+    const last = page.locator('.ps-finding-card[data-finding-id="f_keyboard_2"]');
+    for (const name of ["Details", "Resolve", "Delete"]) {
       const control = last.getByRole("button", { name, exact: true });
       await control.scrollIntoViewIfNeeded();
       const bounds = await control.boundingBox();
@@ -220,16 +225,17 @@ test("usability: finding lifecycle actions remain keyboard reachable in narrow a
       await dialog.accept();
     });
     for (let index = 0; index < 3; index++) {
-      const row = popup.locator(`[data-finding-id="f_keyboard_${index}"]`);
+      const row = popup.locator(`.ps-finding-card[data-finding-id="f_keyboard_${index}"]`);
       await row.getByRole("button", { name: "Delete", exact: true }).focus();
       await popup.keyboard.press("Enter");
       await row.waitFor({ state: "detached" });
       const focus = index < 2
-        ? popup.locator(`[data-finding-id="f_keyboard_${index + 1}"]`).getByRole("button", { name: "Resolve", exact: true })
-        : popup.locator("[data-findings-heading]");
+        ? popup.locator(`.ps-finding-card[data-finding-id="f_keyboard_${index + 1}"]`).getByRole("button", { name: "Details", exact: true })
+        : popup.locator("[data-findings-results]");
       await until(() => focus.evaluate(control => control === control.ownerDocument.activeElement), "stable focus after finding deletion");
     }
-    await popup.getByText("No saved AI findings.", { exact: true }).waitFor();
+    await popup.getByRole("heading", { name: "No matching findings", exact: true }).waitFor();
+    assert.equal(await popup.locator(".ps-finding-card").count(), 0);
     assert.equal(confirmations.length, 3);
     assert.ok(confirmations.every(dialog => dialog.type === "confirm" && dialog.message.startsWith("Delete this finding?")));
     assert.deepEqual(faults, []);
@@ -239,7 +245,7 @@ test("usability: finding lifecycle actions remain keyboard reachable in narrow a
     assert.equal(saved.nodes.length, input.doc.nodes.length, "Finding actions never delete diagram targets");
     await popup.close();
     await page.getByRole("button", { name: /^Undo/ }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 1), "Undo restores the last finding after docking");
+    await until(() => page.locator(".ps-finding-card").count().then(count => count === 1), "Undo restores the last finding after docking");
     observations.accessibility = "320px controls, keyboard resolve/reopen/delete, popup-owned confirmation and deterministic empty-list focus.";
   });
 });
@@ -1406,7 +1412,7 @@ test("usability: all inspector tabs share one persistent docked, floating and po
 
     for (const [tab, id] of [
       ["Properties", "properties"], ["Edges", "edges"], ["Issues", "issues"], ["Comments", "comments"],
-      ["Deviations", "deviations"], ["Changes", "changes"], ["Data", "data"], ["Work", "work"], ["Findings", "assistant"],
+      ["Deviations", "deviations"], ["Changes", "changes"], ["Data", "data"], ["Work", "work"], ["Findings", "findings"], ["AI Assistant", "assistant"],
     ]) {
       await page.getByRole("tab", { name: new RegExp(`^${tab}\\b`) }).click();
       const panelId = `#ps-inspector-panel-${id}`;
@@ -1761,7 +1767,7 @@ test("usability: service disclosure reflects credential-free local configuration
     await page.setViewportSize({ width: 320, height: 640 });
     assert.equal(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await page.getByRole("tab", { name: "AI Assistant", exact: true }).click();
     await page.locator(".ps-service-notice").filter({ hasText: /credential-free local mode/ }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Analyze model", exact: true }).isDisabled(), true);
   });
@@ -2444,6 +2450,9 @@ test("usability: inspector keyboard tabs, pinning, and keyboard resizing", async
     const properties = page.getByRole("tab", { name: "Properties", exact: true });
     await properties.focus();
     await page.keyboard.press("ArrowRight");
+    const findings = page.getByRole("tab", { name: /^Findings\b/ });
+    assert.equal(await findings.getAttribute("aria-selected"), "true");
+    await page.keyboard.press("ArrowRight");
     const edges = page.getByRole("tab", { name: /^Edges/ });
     assert.equal(await edges.getAttribute("aria-selected"), "true");
     await node(page, "n_api").click();
@@ -2523,7 +2532,8 @@ test("regression: deviations require and only allow explanation edits", async ()
     await page.getByLabel("Quick actions")
       .getByRole("button", { name: /^Deviations/ }).waitFor();
     await deviationsTab.click();
-    const importedRow = page.locator(".ps-deviation-row").filter({
+    const panel = page.locator("#ps-inspector-panel-deviations");
+    const importedRow = panel.locator(".ps-deviation-row").filter({
       hasText: "Imported endpoint deviation",
     });
     await importedRow.getByRole("button", {
@@ -2556,8 +2566,10 @@ test("regression: deviations require and only allow explanation edits", async ()
       "Track until the endpoint and flow are represented.",
     );
     await page.getByRole("button", { name: "Create deviation", exact: true }).click();
-    await page.getByText("Missing external endpoint", { exact: true }).waitFor();
-    const row = page.locator(".ps-deviation-row").filter({
+    assert.equal(await page.locator("#ps-inspector-panel-findings").isVisible(), false,
+      "The retained Findings card must not create a competing visible view");
+    await panel.getByText("Missing external endpoint", { exact: true }).waitFor();
+    const row = panel.locator(".ps-deviation-row").filter({
       hasText: "Missing external endpoint",
     });
     assert.equal(await row.getByText(/^Key:/).count(), 0);
@@ -2571,7 +2583,7 @@ test("regression: deviations require and only allow explanation edits", async ()
     assert.equal(await row.getByRole("button", { name: "Delete", exact: true }).count(), 0);
     await row.getByText("Active", { exact: true }).waitFor();
     await row.getByRole("button", { name: "Explain", exact: true }).click();
-    const editor = page.locator(".ps-deviation-row");
+    const editor = panel.locator(".ps-deviation-row");
     const explanation = editor.getByLabel(/^Explanation/);
     await explanation.fill("Retain until the endpoint and flow are represented.");
     await editor.getByRole("button", { name: "Save", exact: true }).click();

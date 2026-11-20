@@ -3,6 +3,7 @@ import { useStore, type FilterState, type Selection } from "./store";
 import { useUiShell, type InspectorTab } from "./uiShell";
 import type { PsDocument, Scenario } from "./types";
 import type { AssistantAnalysisSnapshot } from "./designAssistant";
+import { findingExists, findingKey, type FindingIdentity } from "./findingsView";
 import { getDetailsTab, setDetailsTab, type DetailsTab } from "./components/detailsTabStore";
 
 type ScrollPlace = { element: HTMLElement; top: number; left: number; anchor?: HTMLElement; offset?: number };
@@ -65,12 +66,15 @@ export function restoreInspectorPlace(host: HTMLElement, place: InspectorPlace, 
 
 export type ReviewElement = { kind: "node" | "edge" | "boundary" | "annotation" | "scenario"; id: string };
 export type ReviewRecord = { kind: "issue" | "comment" | "work" | "deviation"; id: string };
-export type ReviewSource = { kind: ReviewRecord["kind"] | "change" | "finding" | "message"; id: string };
+export type ReviewSource =
+  | { kind: ReviewRecord["kind"] | "change" | "finding" | "message"; id: string }
+  | { kind: "unified-finding"; id: string; identity: FindingIdentity };
 type ReturnPoint = {
   tab: InspectorTab;
   source?: ReviewSource;
   session: string;
   analysis: AssistantAnalysisSnapshot | null;
+  findingDetail: FindingIdentity | null;
   scenarioId: string | null;
   selection: Selection;
   multiSelectedIds: string[];
@@ -81,7 +85,7 @@ type ReturnPoint = {
 type NavigationRequest = {
   session: string;
   tab: InspectorTab;
-} & ({ kind: "tab" | "panel" } | { kind: "record"; target: ReviewRecord } | { kind: "return"; point: ReturnPoint });
+} & ({ kind: "tab" | "panel" | "finding" } | { kind: "record"; target: ReviewRecord } | { kind: "return"; point: ReturnPoint });
 export type ReviewNavigationState = {
   returns: ReturnPoint[];
   preview: ReturnPoint | null;
@@ -92,7 +96,7 @@ export type ReviewNavigationState = {
 
 export const inspectorViewLabels: Record<InspectorTab, string> = {
   properties: "Properties", edges: "Edges", issues: "Issues",
-  assistant: "Findings", comments: "Comments", deviations: "Deviations", changes: "Changes", data: "Data", work: "Work",
+  findings: "Findings", assistant: "AI Assistant", comments: "Comments", deviations: "Deviations", changes: "Changes", data: "Data", work: "Work",
 };
 
 export function reviewElementExists(doc: PsDocument, target: ReviewElement): boolean {
@@ -118,8 +122,9 @@ function validSelection(doc: PsDocument, selection: Selection, scenarioId: strin
 }
 
 function recordRow(host: HTMLElement, tab: InspectorTab, record: ReviewSource): HTMLElement | undefined {
-  return [...host.querySelectorAll<HTMLElement>(`#ps-inspector-panel-${tab} [data-review-id]`)]
-    .find(row => row.dataset.reviewKind === record.kind && row.dataset.reviewId === record.id);
+  const rows = [...host.querySelectorAll<HTMLElement>(`#ps-inspector-panel-${tab} [data-review-id]`)]
+    .filter(row => row.dataset.reviewKind === record.kind && row.dataset.reviewId === record.id);
+  return rows.find(row => row.getClientRects().length) ?? rows[0];
 }
 
 export function useReviewNavigation() {
@@ -131,19 +136,20 @@ export function useReviewNavigation() {
 
   const capture = (source?: ReviewSource, trigger?: HTMLElement): ReturnPoint => ({
     tab: inspectorActiveTab, source, session, analysis: assistantAnalysis,
+    findingDetail: inspectorActiveTab === "findings" ? shell.findingDetail : null,
     scenarioId: activeScenarioId, selection, multiSelectedIds: [...store.multiSelectedIds],
     filter: { ...filter }, detailsTab: getDetailsTab(),
     place: inspectorHostRef.current ? captureInspectorPlace(inspectorHostRef.current, undefined, trigger) : { scroll: [], focus: null },
   });
 
   const visit = (tab: InspectorTab, source: ReviewSource | undefined, trigger: HTMLElement | undefined,
-    request: NavigationRequest | null, continueVisit = false) => {
+    request: NavigationRequest | null, continueVisit = false, changesSubview = false) => {
     const preview = reviewNavigation.preview;
     // A row's first click may select a target before its double-click opens Properties.
     const point = continueVisit && preview && preview.session === session && preview.tab === inspectorActiveTab
       && source && preview.source?.kind === source.kind && preview.source.id === source.id
       && (pointIsAssistant(preview) ? preview.analysis === assistantAnalysis : true) ? preview : capture(source, trigger);
-    const changesView = tab !== inspectorActiveTab;
+    const changesView = tab !== inspectorActiveTab || changesSubview;
     setReviewNavigation(current => ({
       returns: changesView ? [...current.returns, point].slice(-4) : current.returns,
       preview: changesView ? null : point,
@@ -183,6 +189,17 @@ export function useReviewNavigation() {
     visit(tab, source, trigger, { kind: "record", target, tab, session });
   };
 
+  const visitFinding = (identity: FindingIdentity, trigger: HTMLElement) => {
+    if (!findingExists(identity, store)) {
+      setReviewNavigation(current => ({ ...current, notice: "This exact finding is no longer available. No other record was substituted." }));
+      return;
+    }
+    const source: ReviewSource = { kind: "unified-finding", id: findingKey(identity), identity };
+    visit("findings", source, trigger, { kind: "finding", tab: "findings", session }, false,
+      inspectorActiveTab === "findings" && (!shell.findingDetail || findingKey(shell.findingDetail) !== findingKey(identity)));
+    shell.setFindingDetail(identity);
+  };
+
   const sourceExists = (point: ReturnPoint): boolean => {
     const source = point.source;
     if (!source) return true;
@@ -193,6 +210,7 @@ export function useReviewNavigation() {
       case "work": return doc.workItems.some(item => item.id === source.id);
       case "change": return store.diffChanges.some(item => item.id === source.id);
       case "finding": return point.analysis === assistantAnalysis && store.assistantFindings.some(item => item.id === source.id);
+      case "unified-finding": return findingExists(source.identity, store);
       case "message": return !!inspectorHostRef.current && !!recordRow(inspectorHostRef.current, point.tab, source);
     }
   };
@@ -202,10 +220,11 @@ export function useReviewNavigation() {
     if (!point || point.session !== session) { shell.endReviewNavigation(); return; }
     const scenarioAvailable = point.scenarioId === null || doc.scenarios.some(scenario => scenario.id === point.scenarioId);
     const originAvailable = sourceExists(point);
+    const findingAvailable = !point.findingDetail || findingExists(point.findingDetail, store);
     const selectionAvailable = scenarioAvailable && validSelection(doc, point.selection, point.scenarioId);
     const tab = (point.tab === "changes" && !store.diffFileName) || (point.tab === "deviations" && !doc.deviations.length)
       ? "properties" : point.tab;
-    const notice = !originAvailable ? "The original review record is no longer available. No other record was substituted."
+    const notice = !originAvailable || !findingAvailable ? "The original review record is no longer available. No other record was substituted."
       : !scenarioAvailable ? "The original scenario is no longer available. Showing all scenarios without restoring its selection."
       : !selectionAvailable ? "The original selection is no longer available in this scenario."
       : null;
@@ -218,9 +237,10 @@ export function useReviewNavigation() {
     store.setSelection(selectionAvailable ? point.selection : null, additional);
     store.setFilter(point.filter);
     setDetailsTab(point.detailsTab);
+    if (point.tab === "findings") shell.setFindingDetail(findingAvailable ? point.findingDetail : null);
     setReviewNavigation(current => ({
       returns: current.returns.slice(0, -1), preview: null, notice, revision: current.revision + 1,
-      request: originAvailable && scenarioAvailable && tab === point.tab
+      request: originAvailable && findingAvailable && scenarioAvailable && tab === point.tab
         ? { kind: "return", point, session, tab } : { kind: "tab", session, tab },
     }));
     shell.openInspector(tab, undefined, { preserveReviewJourney: true, focus: false });
@@ -232,14 +252,18 @@ export function useReviewNavigation() {
     shell.openInspector(inspectorActiveTab, undefined, { preserveReviewJourney: true, focus: false });
   };
 
-  return { visitElement, visitRecord, back, dismiss, session };
+  return { visitElement, visitRecord, visitFinding, back, dismiss, session };
 }
 
-function pointIsAssistant(point: ReturnPoint): boolean { return point.tab === "assistant"; }
+function pointIsAssistant(point: ReturnPoint): boolean {
+  return point.tab === "assistant" || point.findingDetail?.kind === "ai"
+    || (point.source?.kind === "unified-finding" && point.source.identity.kind === "ai");
+}
 
 export function useReviewNavigationLifecycle() {
   const { documentSessionId, collab, assistantAnalysis, viewMode, doc } = useStore();
-  const { reviewNavigation, setReviewNavigation, endReviewNavigation, inspectorHostRef, inspectorVisible } = useUiShell();
+  const { reviewNavigation, setReviewNavigation, endReviewNavigation, inspectorHostRef, inspectorVisible,
+    findingDetail, setFindingDetail } = useUiShell();
   const session = `${documentSessionId}:${collab.room ?? ""}`;
   const previousSession = useRef(session);
   const previousView = useRef(viewMode);
@@ -248,6 +272,7 @@ export function useReviewNavigationLifecycle() {
 
   useLayoutEffect(() => {
     if (previousSession.current !== session || previousView.current !== viewMode) endReviewNavigation();
+    if (previousSession.current !== session) setFindingDetail(null);
     previousSession.current = session;
     previousView.current = viewMode;
   }, [session, viewMode, endReviewNavigation]);
@@ -256,9 +281,14 @@ export function useReviewNavigationLifecycle() {
     if ([...reviewNavigation.returns, ...(reviewNavigation.preview ? [reviewNavigation.preview] : []),
       ...(reviewNavigation.request?.kind === "return" ? [reviewNavigation.request.point] : [])]
       .some(point => pointIsAssistant(point) && point.analysis !== assistantAnalysis)) {
-      endReviewNavigation("assistant", "The AI review changed. Its previous return context is no longer available.");
+      endReviewNavigation(undefined, "The AI review changed. Its previous return context is no longer available.");
     }
-  }, [assistantAnalysis, reviewNavigation.returns, reviewNavigation.preview, reviewNavigation.request, endReviewNavigation]);
+    if (findingDetail?.kind === "ai" && findingDetail.analysis !== assistantAnalysis) {
+      setFindingDetail(null);
+      setReviewNavigation(current => ({ ...current,
+        notice: "The AI review changed. Its previous finding is no longer available." }));
+    }
+  }, [assistantAnalysis, findingDetail, reviewNavigation.returns, reviewNavigation.preview, reviewNavigation.request, endReviewNavigation]);
 
   useLayoutEffect(() => {
     const request = reviewNavigation.request;
@@ -280,7 +310,11 @@ export function useReviewNavigationLifecycle() {
             restoreInspectorPlace(host, request.point.place, false);
             const row = request.point.source ? recordRow(host, request.tab, request.point.source) : undefined;
             const control = row?.querySelector<HTMLElement>("[data-review-focus]:not(:disabled), .ps-assistant-finding-target:not(:disabled), button:not(:disabled)");
-            (control ?? tab)?.focus({ preventScroll: true });
+            const listHeading = request.tab === "findings" ? panel.querySelector<HTMLElement>("[data-findings-results]") : null;
+            (control ?? listHeading ?? tab)?.focus({ preventScroll: true });
+            if (!row && listHeading && request.point.source?.kind === "unified-finding") {
+              setReviewNavigation(current => ({ ...current, notice: "The original finding no longer matches these filters. Your filters were kept; no other record was substituted." }));
+            }
           }
         } else if (request.kind === "record") {
           const current = currentDoc.current;
@@ -297,6 +331,10 @@ export function useReviewNavigationLifecycle() {
           const landing = control?.closest<HTMLElement>(".ps-work-field") ?? control ?? row;
           landing.scrollIntoView({ block: "nearest", inline: "nearest" });
           control?.focus({ preventScroll: true });
+        } else if (request.kind === "finding") {
+          const heading = panel.querySelector<HTMLElement>("[data-finding-detail-heading]");
+          heading?.scrollIntoView({ block: "start", inline: "nearest" });
+          heading?.focus({ preventScroll: true });
         } else if (request.kind === "panel") {
           panel.focus({ preventScroll: true });
         } else {

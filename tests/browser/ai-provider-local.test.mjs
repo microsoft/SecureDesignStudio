@@ -81,7 +81,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
       name: "synthetic-provider.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(modelFixture())),
     });
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Design Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "AI Assistant", exact: true }).click();
     const analysis = page.locator(".ps-assistant");
     const selection = analysis.getByLabel("AI provider", { exact: true });
     await until(async () => await selection.inputValue() === "claude", "launcher default applied");
@@ -152,7 +152,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
     await designer.getByRole("button", { name: "Close Threat Model Designer", exact: true }).click();
     await page.reload();
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Design Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "AI Assistant", exact: true }).click();
     await until(async () => await selection.inputValue() === "codex", "local preference restored");
     await analysis.getByRole("tab", { name: "AI Analysis", exact: true }).click();
     const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), autosaveKey);
@@ -167,7 +167,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
     await page.evaluate(() => localStorage.setItem("secure-design-studio:ai-provider:v1", '{"provider":"invalid"}'));
     await page.reload();
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Design Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "AI Assistant", exact: true }).click();
     await until(async () => await selection.inputValue() === "claude", "corrupt preference diagnosed");
     await analysis.getByText(/saved AI preference could not be read/).waitFor();
     designResponse = {
@@ -217,7 +217,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await designer.getByRole("button", { name: "Close Threat Model Designer", exact: true }).click();
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Design Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "AI Assistant", exact: true }).click();
     capabilities.providers[0] = { id: "azure", label: "Azure OpenAI / Foundry", available: true,
       message: "Synthetic Azure deployment is configured; no credentials or real inference are used in this test." };
     await analysis.getByRole("button", { name: "Refresh providers", exact: true }).click();
@@ -231,17 +231,22 @@ test("AI providers: shared selection, readiness, request routing, persistence an
     }));
     await analysis.getByRole("tab", { name: "AI Analysis", exact: true }).click();
     await analysis.getByRole("button", { name: "Analyze model", exact: true }).click();
-    await until(() => analysis.locator(".ps-assistant-finding").count().then(count => count === 5), "small-screen findings populated");
+    const review = page.locator(".ps-findings");
+    await until(() => review.locator(".ps-finding-card").count().then(count => count === 5), "small-screen findings populated");
+    await analysis.getByRole("button", { name: "Review findings (5)", exact: true }).click();
+    const reviewScroller = async () => await review.evaluate(root => getComputedStyle(root).overflowY === "visible")
+      ? page.locator(".ps-inspector") : review;
     const requestCount = posts.length;
     for (const viewport of [{ width: 900, height: 600 }, { width: 320, height: 480 }]) {
       await page.setViewportSize(viewport);
-      await analysis.getByRole("button", { name: "Go to AI findings (5)", exact: true }).click();
-      const docked = await analysis.evaluate(root => {
-        const bounds = root.getBoundingClientRect();
-        const finding = root.querySelector(".ps-assistant-finding").getBoundingClientRect();
+      await review.getByRole("button", { name: "Findings (5)", exact: true }).click();
+      const docked = await review.evaluate(root => {
+        const scroller = getComputedStyle(root).overflowY === "visible" ? root.closest(".ps-inspector") : root;
+        const bounds = scroller.getBoundingClientRect();
+        const finding = root.querySelector(".ps-finding-card").getBoundingClientRect();
         const inspector = root.closest(".ps-inspector");
         return { height: bounds.height, firstVisible: finding.top < bounds.bottom && finding.bottom > bounds.top,
-          scrollable: root.scrollHeight > root.clientHeight,
+          scrollable: scroller.scrollHeight > scroller.clientHeight,
           expanded: inspector.classList.contains("ps-inspector-expanded"),
           sizes: Object.fromEntries([".ps-main", ".ps-inspector", ".ps-inspector-header", ".ps-inspector-tabs",
             ".ps-inspector-panel", ".ps-assistant-surface-bar"].map(selector =>
@@ -256,11 +261,14 @@ test("AI providers: shared selection, readiness, request routing, persistence an
         `Provider controls must not leave a zero-height results strip: ${JSON.stringify(docked)}`);
       await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("floating");
       await page.getByRole("dialog", { name: "Inspector", exact: true }).waitFor();
-      await analysis.getByRole("button", { name: "Go to AI findings (5)", exact: true }).click();
-      assert.ok(await analysis.evaluate(root => root.clientHeight >= 180), "Floating view reserves usable review space");
-      await analysis.evaluate(root => { root.scrollTop = root.scrollHeight; });
-      await until(async () => analysis.locator(".ps-assistant-finding").last().evaluate(row => {
-        const root = row.closest(".ps-assistant").getBoundingClientRect(), bounds = row.getBoundingClientRect();
+      await review.getByRole("button", { name: "Findings (5)", exact: true }).click();
+      const floatingScroller = await reviewScroller();
+      assert.ok(await floatingScroller.evaluate(root => root.clientHeight >= 180), "Floating view reserves usable review space");
+      await floatingScroller.evaluate(root => { root.scrollTop = root.scrollHeight; });
+      await until(async () => review.locator(".ps-finding-card").last().evaluate(row => {
+        const findings = row.closest(".ps-findings");
+        const scroller = getComputedStyle(findings).overflowY === "visible" ? row.closest(".ps-inspector") : findings;
+        const root = scroller.getBoundingClientRect(), bounds = row.getBoundingClientRect();
         return bounds.top < root.bottom && bounds.bottom <= root.bottom + 2;
       }), "last finding reachable");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
@@ -271,7 +279,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
     }
     assert.equal(posts.length, requestCount, "Moving and resizing findings does not run more AI requests");
     await page.setViewportSize({ width: 1366, height: 900 });
-    await analysis.locator('[data-finding-id="review_0"] .ps-assistant-finding-target').click();
+    await review.locator('[data-finding-id="review_0"] .ps-finding-card-main').click();
     await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
     const navigationDoc = await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey);
@@ -282,7 +290,7 @@ test("AI providers: shared selection, readiness, request routing, persistence an
       "Provider change invalidates the hidden Findings origin");
     await designer.getByRole("button", { name: "Close Threat Model Designer", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "previous return context is no longer available" }).waitFor();
-    assert.equal(await analysis.locator(".ps-assistant-finding").count(), 5,
+    assert.equal(await review.locator(".ps-finding-card[data-finding-source='ai']").count(), 5,
       "Provider selection clears transient navigation/conversation, not saved findings");
     await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
     assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc, autosaveKey), navigationDoc,

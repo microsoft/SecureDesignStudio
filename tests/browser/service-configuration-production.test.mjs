@@ -114,7 +114,7 @@ for (const delivery of ["hosted", "standalone"]) {
       const caches = await page.evaluate(async () => (await indexedDB.databases()).map(db => db.name ?? ""));
       assert.equal(caches.some(name => /(?:privsec|secure-design-studio):collab:/.test(name)), false,
         "No room persistence before enabled joining; disabled fragments are inert");
-      await page.getByRole("tab", { name: /^Findings\b/ }).click();
+      await page.getByRole("tab", { name: "AI Assistant", exact: true }).click();
       const analyze = page.getByRole("button", { name: "Analyze model", exact: true });
       assert.equal(await analyze.isEnabled(), mocked || (mode === "selected" && delivery === "hosted"));
       if (mocked) {

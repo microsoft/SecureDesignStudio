@@ -8,6 +8,7 @@ import { unzipSync, strFromU8 } from "fflate";
 import { DOMParser } from "@xmldom/xmldom";
 import { modelFixture, autosaveKey, publicPowerPlatformPrompt, publicPowerPlatformDesignFixture } from "./fixture.mjs";
 import { until } from "./harness.mjs";
+import { findingsFixture } from "./findings-contracts.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const origin = "http://localhost:5173";
@@ -133,19 +134,41 @@ async function run(exercise, { designer = false, greenfield = false, respond, st
       return;
     }
     await until(() => page.locator(".react-flow__edge").count().then(count => count === 2), "imported fixture");
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    const findingsBadge = page.locator("#ps-inspector-tab-assistant .ps-inspector-tab-count");
-    assert.equal(await findingsBadge.textContent(), "0", "Findings badge starts empty");
+    await page.getByRole("tab", { name: "AI Assistant", exact: true }).click();
+    const findingsBadge = page.locator("#ps-inspector-tab-findings .ps-inspector-tab-count");
+    const savedCount = (initial ?? fixture()).doc.issues.length + (initial ?? fixture()).doc.deviations.length;
+    assert.equal(await findingsBadge.textContent(), String(savedCount), "Findings includes existing saved records before AI");
     await page.getByRole("button", { name: "Pin inspector tab", exact: true }).click();
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === findings.length), "synthetic findings");
-    assert.equal(await findingsBadge.textContent(), String(findings.length),
-      "Findings badge counts the findings from the latest analysis");
+    await until(() => aiCards(page).count().then(count => count === findings.length), "synthetic findings");
+    assert.equal(await findingsBadge.textContent(), String(findings.length + savedCount),
+      "Findings badge counts distinct real records from all sources");
     assert.equal(requests.length, 1);
     assert.equal(requests[0].mode, "analyze");
     assert.equal(requests[0].context.scenario.id, "s_primary");
+    await page.getByRole("button", { name: `Review findings (${findings.length})`, exact: true }).click();
     await exercise({ page, requests, planRequests, importModel });
     assert.deepEqual(faults, [], "No external traffic, runtime errors or dialogs");
+  } catch (error) {
+    if (context && process.env.SDS_TEST_OUTPUT_DIR) {
+      for (const [index, page] of context.pages().entries()) {
+        if (page.isClosed()) continue;
+        const path = resolve(process.env.SDS_TEST_OUTPUT_DIR, `failure-${Date.now()}-${index}.png`);
+        try {
+          await page.screenshot({ path });
+          console.error("Production failure evidence:", path, await page.evaluate(() => ({
+            title: document.title,
+            presentation: document.querySelector(".ps-inspector")?.className,
+            tabs: [...document.querySelectorAll(".ps-inspector-tabs button")].map(tab => ({
+              label: tab.textContent, selected: tab.getAttribute("aria-selected"), visible: !!tab.getClientRects().length,
+            })),
+          })));
+        } catch (captureError) {
+          console.error("Could not capture production failure evidence:", captureError);
+        }
+      }
+    }
+    throw error;
   } finally {
     if (context) await context.close();
     await browser.close();
@@ -165,16 +188,16 @@ async function frameSettled(page) {
 }
 
 async function placeFindingAtTop(page, id = "edge") {
-  await page.locator(`[data-finding-id="${id}"]`).evaluate(row => {
-    const root = row.closest(".ps-assistant");
+  await page.locator(`.ps-finding-card[data-finding-id="${id}"]`).evaluate(row => {
+    const root = row.closest(".ps-findings");
     root.scrollTop += row.getBoundingClientRect().top - root.getBoundingClientRect().top;
   });
   await frameSettled(page);
 }
 
 async function assertFindingVisible(page, id = "edge") {
-  const bounds = await page.locator(`[data-finding-id="${id}"]`).evaluate(row => {
-    const root = row.closest(".ps-assistant").getBoundingClientRect();
+  const bounds = await page.locator(`.ps-finding-card[data-finding-id="${id}"]`).evaluate(row => {
+    const root = row.closest(".ps-findings").getBoundingClientRect();
     const item = row.getBoundingClientRect();
     return { top: item.top - root.top, bottom: item.bottom - root.top, height: root.height };
   });
@@ -185,7 +208,7 @@ async function popOutReview(page) {
   const pending = page.context().waitForEvent("page");
   await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("window");
   const child = await pending;
-  await child.locator(".ps-assistant").waitFor();
+  await child.locator(".ps-inspector").waitFor();
   await frameSettled(child);
   return child;
 }
@@ -216,8 +239,8 @@ test("production review: floating resize and redock preserve the mounted review,
     await settleReviewGeometry(page);
     await page.setViewportSize({ width: 1000, height: 620 });
     await savedState(page);
-    await heading(page, "Flow finding").click();
-    await page.locator(".ps-assistant").evaluate(root => { root.dataset.reviewIdentity = "same-review"; });
+    await element(page, "node", "n_client").click();
+    await page.locator(".ps-findings").evaluate(root => { root.dataset.reviewIdentity = "same-review"; });
     await placeFindingAtTop(page);
     const before = await savedState(page);
     await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("floating");
@@ -225,8 +248,8 @@ test("production review: floating resize and redock preserve the mounted review,
     await surface.waitFor();
     await frameSettled(page);
     assert.equal(await page.locator(".ps-inspector-dock").isVisible(), false, "Undocking frees the canvas");
-    assert.equal(await page.locator(".ps-assistant").getAttribute("data-review-identity"), "same-review");
-    assert.equal(await page.locator(".ps-assistant-finding").count(), findings.length);
+    assert.equal(await page.locator(".ps-findings").getAttribute("data-review-identity"), "same-review");
+    assert.equal(await aiCards(page).count(), findings.length);
     await assertFindingVisible(page);
     const size = await surface.boundingBox();
     const resize = surface.getByRole("button", { name: "Resize inspector; use arrow keys", exact: true });
@@ -265,10 +288,10 @@ test("production review: floating resize and redock preserve the mounted review,
     assert.deepEqual((await savedState(page)).doc, before.doc, "Delete while reviewing does not delete a model target");
     await assertFindingVisible(page);
     await surface.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("docked");
-    await page.locator("#ps-inspector-panel-assistant .ps-assistant").waitFor();
+    await page.locator("#ps-inspector-panel-findings .ps-findings").waitFor();
     await frameSettled(page);
     await assertFindingVisible(page);
-    assert.equal(await page.locator(".ps-assistant").getAttribute("data-review-identity"), "same-review");
+    assert.equal(await page.locator(".ps-findings").getAttribute("data-review-identity"), "same-review");
     assert.deepEqual((await savedState(page)).doc, before.doc);
     assert.deepEqual((await savedState(page)).past, before.past);
     assert.equal(requests.length, 1, "Presentation changes never re-run analysis");
@@ -284,13 +307,13 @@ test("production review: popup retains results and exports all issues despite ma
   await run(async ({ page, requests }) => {
     await settleReviewGeometry(page);
     const before = await savedState(page);
-    await heading(page, "Flow finding").click();
+    await element(page, "node", "n_client").click();
     await placeFindingAtTop(page);
     await page.evaluate(() => { location.hash = "room=synthetic&key=SYNTHETIC_ROOM_KEY"; });
     const child = await popOutReview(page);
     assert.equal(await child.evaluate(() => window.opener), null);
     assert.equal(await child.locator(".ps-toolbar").count(), 0, "The popup is the same review, not a second app");
-    assert.equal(await child.locator(".ps-assistant-finding").count(), findings.length);
+    assert.equal(await aiCards(child).count(), findings.length);
     assert.doesNotMatch(await child.content(), /SYNTHETIC_ROOM_KEY/);
     await assertFindingVisible(child);
     await child.setViewportSize({ width: 760, height: 480 });
@@ -311,7 +334,7 @@ test("production review: popup retains results and exports all issues despite ma
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
     const dockedWorkbook = await readWorkbookDownload(page);
     assert.deepEqual(dockedWorkbook.Issues, workbook.Issues, "Export works from either document");
-    await page.locator("#ps-inspector-panel-assistant .ps-assistant").waitFor();
+    await page.locator("#ps-inspector-panel-findings .ps-findings").waitFor();
     await frameSettled(page);
     await assertFindingVisible(page);
     assert.deepEqual((await savedState(page)).doc, before.doc);
@@ -322,6 +345,7 @@ test("production review: popup retains results and exports all issues despite ma
 
 test("production review: blocked popup falls back to floating and chat draft/caret survive presentation changes", async () => {
   await run(async ({ page, requests }) => {
+    await openAssistant(page);
     await page.locator(".ps-assistant").getByRole("tab", { name: "Chat", exact: true }).click();
     const input = page.getByRole("textbox", { name: "Ask about this model", exact: true });
     await input.fill("Keep this draft and reading place");
@@ -354,6 +378,7 @@ test("production review: blocked popup falls back to floating and chat draft/car
 test("production review: closing the docked inspector cancels pending work without losing previous results", async () => {
   let pending;
   await run(async ({ page, requests }) => {
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(() => Boolean(pending), "second analysis held");
     await page.getByRole("button", { name: "Close inspector", exact: true }).click();
@@ -361,19 +386,19 @@ test("production review: closing the docked inspector cancels pending work witho
     await reply(pending.route, { answer: "Late cancelled analysis", references: [flow],
       findings: [{ ...findings[0], title: "Must not replace the retained results" }] });
     await page.getByRole("button", { name: "Open inspector", exact: true }).click();
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await openAssistant(page);
     try {
       await page.locator(".ps-assistant").getByRole("alert").filter({ hasText: "cancelled when the inspector closed" }).waitFor();
     } catch (error) {
       console.error("Review close diagnostics:", await page.evaluate(() => ({
         error: document.querySelector(".ps-assistant-error")?.textContent,
         activeTab: document.querySelector(".ps-inspector-tabs [aria-selected='true']")?.textContent,
-        findings: document.querySelectorAll(".ps-assistant-finding").length,
+        findings: document.querySelectorAll(".ps-finding-card[data-finding-source='ai']").length,
         assistantVisible: Boolean(document.querySelector(".ps-assistant")?.getBoundingClientRect().height),
       })));
       throw error;
     }
-    assert.equal(await page.locator(".ps-assistant-finding").count(), findings.length);
+    assert.equal(await aiCards(page).count(), findings.length);
     assert.equal(await page.getByText("Must not replace the retained results", { exact: true }).count(), 0);
     assert.equal(requests.length, 2, "Reopening never resubmits");
   }, { respond: async request => {
@@ -386,19 +411,19 @@ test("production review: pending analysis survives undocking but a replacement m
   const pending = [];
   await run(async ({ page, requests, importModel }) => {
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Design Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "AI Assistant", exact: true }).click();
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(() => pending.length === 1, "held review request");
     const child = await popOutReview(page);
     await reply(pending[0].route, { answer: "Snapshot response", references: [flow], findings });
-    await until(() => child.locator(".ps-assistant-finding").count().then(count => count === findings.length), "analysis completed in popup");
+    await until(() => aiCards(child).count().then(count => count === findings.length), "analysis completed in popup");
     assert.equal(requests.length, 1);
     await child.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(() => pending.length === 2, "second held review request");
     await importModel(modelFixture());
     await reply(pending[1].route, { answer: "Must not enter replacement model", references: [flow], findings });
     await frameSettled(child);
-    assert.equal(await child.locator(".ps-assistant-finding").count(), 0);
+    assert.equal(await aiCards(child).count(), 0);
     assert.equal(await child.getByText("Must not enter replacement model", { exact: true }).count(), 0);
     assert.equal(requests.length, 2);
     await child.close();
@@ -423,9 +448,8 @@ test("production: Create work item transfers full finding context and severity a
     await scenario(page).selectOption("s_archive");
     for (const [index, title] of ["Node finding", "Flow finding", "Boundary finding", "Available reference finding"].entries()) {
       if (index === 0) await page.setViewportSize({ width: 320, height: 720 });
-      await page.getByRole("tab", { name: /^Findings\b/ }).click();
-      const card = finding(page, title);
-      await card.getByText("Work item classification", { exact: true }).click();
+      const card = await openFinding(page, title);
+      await card.getByText("Work item actions", { exact: true }).click();
       const workItemType = index % 2 === 0 ? "Bug" : "Task";
       const weaknessType = index === 1 ? "" : `Finding weakness ${index + 1}`;
       await card.getByLabel("Work item type", { exact: true }).selectOption(workItemType);
@@ -487,9 +511,9 @@ test("production: Create work item transfers full finding context and severity a
     await last.getByLabel("Description", { exact: true }).fill("User-owned work description");
     await last.getByLabel("Work item type", { exact: true }).selectOption("Bug");
     await last.getByLabel("Weakness Type", { exact: true }).fill("User-owned weakness");
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === findings.length), "analysis rerun");
+    await until(() => aiCards(page).count().then(count => count === findings.length), "analysis rerun");
     assert.equal((await savedState(page)).doc.workItems[3].description, "User-owned work description");
     assert.equal((await savedState(page)).doc.workItems[3].workItemType, "Bug");
     assert.equal((await savedState(page)).doc.workItems[3].weaknessType, "User-owned weakness");
@@ -509,29 +533,32 @@ test("production: saved finding lifecycle preserves copies, reanalysis history a
     assert.equal(original.findings.length, findings.length);
     assert.ok(original.findingAnalysis.id);
     assert.ok(original.findings.every(item => item.status === "Active" && item.accepted === false));
-    await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).click();
+    await (await openFinding(page, "Node finding")).getByRole("button", { name: "Create issue", exact: true }).click();
     const acceptedIssue = (await savedState(page)).doc;
     assert.equal(acceptedIssue.findings.find(item => item.id === "node").accepted, true);
     await page.getByRole("button", { name: /^Undo/ }).click();
     assert.deepEqual((await savedState(page)).doc, original, "One Undo removes the issue and its acceptance marker");
     await page.getByRole("button", { name: /^Redo/ }).click();
     assert.deepEqual((await savedState(page)).doc, acceptedIssue);
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).click();
+    const flowDetail = await openFinding(page, "Flow finding");
+    await flowDetail.getByText("Work item actions", { exact: true }).click();
+    await flowDetail.getByRole("button", { name: "Create work item", exact: true }).click();
     const acceptedWork = (await savedState(page)).doc;
     await page.getByRole("button", { name: /^Undo/ }).click();
     assert.deepEqual((await savedState(page)).doc, acceptedIssue, "One Undo removes Work and its acceptance marker");
     await page.getByRole("button", { name: /^Redo/ }).click();
     assert.deepEqual((await savedState(page)).doc, acceptedWork);
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Boundary finding").getByRole("button", { name: "Resolve", exact: true }).click();
+    await (await openFinding(page, "Boundary finding")).getByRole("button", { name: "Resolve", exact: true }).click();
     const reviewed = (await savedState(page)).doc;
     await page.reload();
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
     assert.deepEqual((await savedState(page)).doc, reviewed);
-    assert.equal(await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true);
-    assert.equal(await finding(page, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).isDisabled(), true);
-    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    await page.getByLabel("Findings status").selectOption("all");
+    assert.equal(await (await openFinding(page, "Node finding")).getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true);
+    const recoveredWork = await openFinding(page, "Flow finding");
+    await recoveredWork.getByText("Work item actions", { exact: true }).click();
+    assert.equal(await recoveredWork.getByRole("button", { name: "Create work item", exact: true }).isDisabled(), true);
+    await (await openFinding(page, "Boundary finding")).getByRole("button", { name: "Reopen", exact: true }).waitFor();
     assert.equal(requests.length, 1, "Reload and lifecycle actions never request AI");
     const confirmations = [];
     page.removeAllListeners("dialog");
@@ -540,7 +567,7 @@ test("production: saved finding lifecycle preserves copies, reanalysis history a
       await dialog.accept();
     });
     for (const title of ["Node finding", "Flow finding"]) {
-      await finding(page, title).getByRole("button", { name: "Delete", exact: true }).click();
+      await (await openFinding(page, title)).getByRole("button", { name: "Delete", exact: true }).click();
       await finding(page, title).waitFor({ state: "detached" });
     }
     const deleted = (await savedState(page)).doc;
@@ -548,6 +575,7 @@ test("production: saved finding lifecycle preserves copies, reanalysis history a
       "Delete keeps the separate Issue and Work snapshots unchanged");
     assert.equal(confirmations.length, 2);
     assert.ok(confirmations.every(dialog => dialog.type === "confirm" && dialog.message.startsWith("Delete this finding?")));
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(async () => (await savedState(page)).doc.findingAnalysis.id !== deleted.findingAnalysis.id, "new review saved");
     const rerun = (await savedState(page)).doc;
@@ -567,7 +595,8 @@ test("production: saved finding lifecycle preserves copies, reanalysis history a
   });
   await run(async ({ page, virtualFiles, requests }) => {
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).waitFor();
+    await page.getByLabel("Findings status").selectOption("all");
+    await (await openFinding(page, "Boundary finding")).getByRole("button", { name: "Reopen", exact: true }).waitFor();
     await page.locator('button[aria-controls="ps-command-menu-file"]').click();
     const downloadEvent = page.waitForEvent("download");
     await page.getByRole("menuitem", { name: /Standalone HTML/i }).click();
@@ -577,13 +606,14 @@ test("production: saved finding lifecycle preserves copies, reanalysis history a
     await page.evaluate(key => localStorage.removeItem(key), autosaveKey);
     await page.goto(`${origin}/saved-findings.html`);
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Boundary finding").getByRole("button", { name: "Reopen", exact: true }).click();
+    await page.getByLabel("Findings status").selectOption("all");
+    await (await openFinding(page, "Boundary finding")).getByRole("button", { name: "Reopen", exact: true }).click();
     const edited = (await savedState(page)).doc;
     assert.deepEqual(edited, { ...portable.doc, findings: portable.doc.findings.map(item =>
       item.id === "boundary" ? { ...item, status: "Active" } : item) });
     await page.reload();
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Boundary finding").getByRole("button", { name: "Resolve", exact: true }).waitFor();
+    await (await openFinding(page, "Boundary finding")).getByRole("button", { name: "Resolve", exact: true }).waitFor();
     assert.deepEqual((await savedState(page)).doc, edited);
     assert.equal(requests.length, 0, "Saved findings remain editable in standalone without requesting AI");
   }, { standalone: true, initial: portable });
@@ -611,13 +641,14 @@ test("production: both AI contexts carry complete saved guidance and accepted fi
       typeId: "nt_browser", definitionSource: "saved", ...guidance, appliesToNodeIds: ["n_api"],
     });
     assert.equal(context.nodes.find(node => node.id === "n_client").description, undefined);
-    await finding(page, "Flow finding").getByRole("button", { name: "Create issue", exact: true }).click();
+    await (await openFinding(page, "Flow finding")).getByRole("button", { name: "Create issue", exact: true }).click();
     const issue = (await savedState(page)).doc.issues.find(item => item.title === "Flow finding");
     assert.match(issue.description, /unverified reference context \(not deployment evidence\)/);
     assert.match(issue.description, /nt_browser.*revision 7/);
     assert.match(issue.description, /https:\/\/example.invalid\/synthetic-guidance/);
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    await finding(page, "Available reference finding").getByRole("button", { name: "Create work item", exact: true }).click();
+    const detail = await openFinding(page, "Available reference finding");
+    await detail.getByText("Work item actions", { exact: true }).click();
+    await detail.getByRole("button", { name: "Create work item", exact: true }).click();
     assert.ok((await savedState(page)).doc.workItems.some(item => /nt_browser.*revision 7/.test(item.description)));
   }, { initial });
   await run(async ({ page, requests, planRequests }) => {
@@ -765,7 +796,7 @@ test("production designer: exact Power Pages prompt sends neutral public choices
     await page.reload();
     await until(() => page.locator(".react-flow__node-process").count().then(count => count === 4), "public product model recovered");
     assert.deepEqual((await savedState(page)).doc, portable.doc);
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(async () => requests.length === 2 &&
       await page.getByRole("button", { name: "Analyze model", exact: true }).isEnabled(), "synthetic public-product review completed");
@@ -1434,7 +1465,7 @@ test("DFD: captured Assistant request honors scope without hidden interior data 
     const primary = model.doc.scenarios.find(item => item.id === "s_primary");
     primary.nodeScopeReasons = { n_api: "Scope reason is data, not instructions." };
     await importModel(model);
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(() => requests.length === 2, "scoped synthetic request");
     const context = requests[1].context;
@@ -1448,10 +1479,21 @@ test("DFD: captured Assistant request honors scope without hidden interior data 
     assert.equal(context.reviewScope.fixedChecks, "unchanged");
   });
 });
-const finding = (page, title) => page.locator(".ps-assistant-finding").filter({
-  has: page.getByRole("button", { name: `Select finding: ${title}`, exact: true }),
+const aiCards = page => page.locator(".ps-finding-card[data-finding-source='ai']");
+const finding = (page, title) => aiCards(page).filter({
+  has: page.getByRole("button", { name: `Focus finding: ${title}`, exact: true }),
 });
-const heading = (page, title) => page.getByRole("button", { name: `Select finding: ${title}`, exact: true });
+const heading = (page, title) => finding(page, title).getByRole("button", { name: `Focus finding: ${title}`, exact: true });
+const commonDetail = page => page.locator("[data-finding-detail]");
+const openAssistant = page => page.getByRole("tab", { name: "AI Assistant", exact: true }).click();
+async function openFinding(page, title) {
+  await page.getByRole("tab", { name: /^Findings\b/ }).click();
+  if (!await page.locator("[data-findings-list]").isVisible()) {
+    await page.locator(".ps-findings").getByRole("button", { name: "Findings list", exact: true }).click();
+  }
+  await finding(page, title).getByRole("button", { name: "Details", exact: true }).click();
+  return commonDetail(page);
+}
 const element = (page, kind, id) => page.locator(
   kind === "edge" ? `.react-flow__edge[data-id="${id}"]`
     : `.react-flow__node-${kind === "boundary" ? "boundary" : "process"}[data-id="${id}"]`,
@@ -1493,33 +1535,36 @@ test("production navigation: exact AI references and Back preserve scenario, fil
   } : item);
   await run(async ({ page }) => {
     await settleReviewGeometry(page);
+    await openAssistant(page);
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
     await page.getByLabel("Ask about this model", { exact: true }).fill("Unsent review question");
     await page.getByRole("tab", { name: "AI Analysis", exact: true }).click();
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
     await scenario(page).selectOption("s_archive");
     await element(page, "node", "n_archive").click();
     await page.locator('button[aria-controls="ps-command-menu-filter"]').click();
     await page.getByLabel("Search", { exact: true }).fill("Archive");
     await page.getByRole("button", { name: "Apply", exact: true }).click();
     await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
-    const origin = finding(page, "Node finding").locator('[data-reference-id="n_client"]');
+    const detail = await openFinding(page, "Node finding");
+    const origin = detail.locator('[data-reference-id="n_client"]');
     await origin.scrollIntoViewIfNeeded();
     await origin.focus();
-    const scrollBefore = await page.locator(".ps-assistant").evaluate(root => root.scrollTop);
+    const scrollBefore = await page.locator(".ps-findings").evaluate(root => root.scrollTop);
     const before = await savedState(page);
     await origin.click();
     await expectSelected(page, "node", "n_client");
     assert.equal(await scenario(page).inputValue(), "s_primary");
-    await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Back to finding", exact: true }).waitFor();
     if (process.env.SDS_TEST_OUTPUT_DIR) {
       await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, "findings-exact-target.png") });
     }
-    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
     await until(() => origin.evaluate(control => control === control.ownerDocument.activeElement),
       "Back restores the exact source reference control");
     assert.equal(await scenario(page).inputValue(), "s_archive");
     await expectSelected(page, "node", "n_archive");
-    assert.ok(Math.abs(await page.locator(".ps-assistant").evaluate(root => root.scrollTop) - scrollBefore) <= 2,
+    assert.ok(Math.abs(await page.locator(".ps-findings").evaluate(root => root.scrollTop) - scrollBefore) <= 2,
       "Back restores the Findings reading position");
     const after = await savedState(page);
     assert.deepEqual(after.doc, before.doc);
@@ -1530,6 +1575,7 @@ test("production navigation: exact AI references and Back preserve scenario, fil
     if (process.env.SDS_TEST_OUTPUT_DIR) {
       await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, "findings-back-context.png") });
     }
+    await openAssistant(page);
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
     assert.equal(await page.getByLabel("Ask about this model", { exact: true }).inputValue(), "Unsent review question");
     await page.getByRole("tab", { name: "AI Analysis", exact: true }).click();
@@ -1537,17 +1583,20 @@ test("production navigation: exact AI references and Back preserve scenario, fil
     await page.getByRole("button", { name: "Clear all", exact: true }).click();
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Pin inspector tab", exact: true }).click();
+    await openFinding(page, "Node finding");
     await origin.click();
-    assert.equal(await page.locator(".ps-review-return").count(), 0, "Pinned focus-only navigation adds no moving strip");
+    assert.equal(await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).count(), 1,
+      "Explicit Properties navigation preserves the pin preference");
     await element(page, "node", "n_client").focus();
     await page.keyboard.press("Delete");
     await until(() => element(page, "node", "n_client").count().then(count => count === 0), "original AI target removed");
-    assert.equal(await heading(page, "Node finding").isDisabled(), true,
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
+    assert.equal(await detail.getByRole("button", { name: /^View affected element:/ }).isDisabled(), true,
       "A removed primary reference never silently becomes a different same-title object");
     assert.equal(await origin.isDisabled(), true);
-    assert.equal(await finding(page, "Node finding").locator('[data-reference-id="n_api"]').isEnabled(), true,
+    assert.equal(await detail.locator('[data-reference-id="n_api"]').isEnabled(), true,
       "The other explicitly identified reference remains a separate action");
-    assert.equal(await finding(page, "Node finding").getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true,
+    assert.equal(await detail.getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true,
       "Creation cannot silently switch away from its original target");
   }, { initial, respond: ({ route }) => reply(route, { answer: "Exact synthetic references.", findings: responses, references: [] }) });
 });
@@ -1568,12 +1617,16 @@ test("production navigation: created record IDs land exactly in popup and suppor
     await issues.getByPlaceholder("Reply…").fill("Unsent reply on the other record");
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
     const child = await popOutReview(page);
+    const detail = await openFinding(child, "Node finding");
     const before = await savedState(page);
-    await finding(child, "Node finding").getByRole("button", { name: "Create issue", exact: true }).click();
-    await child.locator("#ps-inspector-panel-issues").waitFor();
+    await detail.getByRole("button", { name: "Create issue", exact: true }).click();
     const created = (await savedState(page)).doc.issues.filter(item => !before.doc.issues.some(old => old.id === item.id));
     assert.equal(created.length, 1);
     assert.equal(created[0].targetId, "n_client");
+    assert.equal(await detail.getByRole("button", { name: "Issue created", exact: true }).isDisabled(), true);
+    assert.equal(await detail.isVisible(), true, "Saving stays in the common detail");
+    await detail.getByRole("button", { name: "Edit issue and replies", exact: true }).click();
+    await child.locator("#ps-inspector-panel-issues").waitFor();
     const exactRow = child.locator(`#ps-inspector-panel-issues [data-review-id="${created[0].id}"]`);
     const exactControl = exactRow.locator(".ps-allissues-rowhead");
     await until(() => exactControl.evaluate(control => control === control.ownerDocument.activeElement),
@@ -1595,12 +1648,14 @@ test("production navigation: created record IDs land exactly in popup and suppor
     await child.getByRole("button", { name: "Back to Issues", exact: true }).click();
     await until(() => exactControl.evaluate(control => control === control.ownerDocument.activeElement), "Nested Back returns to the saved record");
     assert.equal(await twin.getByPlaceholder("Reply…").inputValue(), "Unsent reply on the other record");
-    await child.getByRole("button", { name: "Back to Findings", exact: true }).click();
-    await until(() => heading(child, "Node finding").evaluate(control => control === control.ownerDocument.activeElement),
-      "A completed creation returns to its same finding, not another enabled action");
+    await child.getByRole("button", { name: "Back to finding", exact: true }).click();
+    await until(() => detail.getByRole("button", { name: "Edit issue and replies", exact: true })
+      .evaluate(control => control === control.ownerDocument.activeElement), "Back returns to the exact common detail action");
     assert.deepEqual((await savedState(page)).doc, afterCreation.doc);
     assert.deepEqual((await savedState(page)).past, afterCreation.past);
-    await finding(child, "Flow finding").getByRole("button", { name: "Create work item", exact: true }).click();
+    const flowDetail = await openFinding(child, "Flow finding");
+    await flowDetail.getByText("Work item actions", { exact: true }).click();
+    await flowDetail.getByRole("button", { name: "Create work item", exact: true }).click();
     const savedWork = (await savedState(page)).doc.workItems;
     const newWork = savedWork.filter(item => item.id !== "wi_same_title");
     assert.equal(newWork.length, 1);
@@ -1609,8 +1664,8 @@ test("production navigation: created record IDs land exactly in popup and suppor
     assert.equal(await name.inputValue(), "Flow finding");
     assert.equal(savedWork.find(item => item.id === "wi_same_title").description, "Existing same-title work");
     await child.close();
-    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
-    await until(() => heading(page, "Flow finding").evaluate(control => control === control.ownerDocument.activeElement),
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
+    await until(() => commonDetail(page).getByRole("heading", { name: "Flow finding", exact: true }).evaluate(control => control === control.ownerDocument.activeElement),
       "Native popup close preserves the created-record return journey");
   }, { initial });
 });
@@ -1619,8 +1674,10 @@ test("production navigation: reanalysis invalidates return context even when fin
   let pending;
   await run(async ({ page, importModel }) => {
     await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    await openAssistant(page);
     await page.getByRole("button", { name: "Analyze model", exact: true }).click();
     await until(() => !!pending, "second synthetic analysis is pending");
+    await page.getByRole("button", { name: `Review findings (${findings.length})`, exact: true }).click();
     await heading(page, "Node finding").click();
     await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
     await reply(pending, { answer: "New analysis with reused IDs.",
@@ -1634,9 +1691,9 @@ test("production navigation: reanalysis invalidates return context even when fin
     await expectSelected(page, "node", "n_api");
     await page.getByRole("button", { name: "Back to Findings", exact: true }).waitFor();
     await importModel(fixture());
-    await until(() => page.locator(".ps-assistant-finding").count().then(count => count === 0), "replacement document loaded");
+    await until(() => aiCards(page).count().then(count => count === 0), "replacement document loaded");
     assert.equal(await page.locator(".ps-review-return").count(), 0);
-    assert.equal(await page.locator(".ps-assistant-finding").count(), 0);
+    assert.equal(await aiCards(page).count(), 0);
   }, { respond: ({ route, index }) => {
     if (index === 0) return reply(route, { answer: "Initial analysis.", findings, references: [] });
     pending = route;
@@ -1696,7 +1753,7 @@ test("production navigation: short narrow journeys retain a complete field, retu
   });
 });
 
-test("production: Assistant findings use issue-style scenario, selection, focus and row feedback", async () => {
+test("production: unified finding titles and targets have distinct keyboard actions and exact scenario navigation", async () => {
   await run(async ({ page }) => {
     await scenario(page).selectOption("s_archive");
     await page.getByRole("tab", { name: /^Issues/ }).click();
@@ -1706,13 +1763,20 @@ test("production: Assistant findings use issue-style scenario, selection, focus 
 
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
     await scenario(page).selectOption("s_archive");
-    const previous = await moveViewport(page);
-    await heading(page, "Node finding").focus();
+    const title = finding(page, "Node finding").getByRole("button", { name: "Details", exact: true });
+    await title.focus();
     await page.keyboard.press("Enter");
+    await commonDetail(page).getByRole("heading", { name: "What was found", exact: true }).waitFor();
+    assert.equal(await scenario(page).inputValue(), "s_archive", "Reading a finding does not change scenario");
+    const previous = await moveViewport(page);
+    await commonDetail(page).getByRole("button", { name: /^View affected element:/ }).focus();
+    await page.keyboard.press("Space");
     await expectFocused(page, "node", "n_client", previous);
-    assert.equal(await scenario(page).inputValue(), "s_primary", "Assistant reveals the target scenario too");
-    assert.equal(await heading(page, "Node finding").getAttribute("aria-pressed"), "true");
-    assert.equal(await finding(page, "Node finding").evaluate(el => el.classList.contains("ps-assistant-finding-selected")), true);
+    assert.equal(await scenario(page).inputValue(), "s_primary");
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
+    assert.equal(await scenario(page).inputValue(), "s_archive");
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await until(() => title.evaluate(control => control === control.ownerDocument.activeElement), "keyboard returns to exact title");
 
     for (const [title, kind, id] of [
       ["Flow finding", "edge", "e_request"], ["Boundary finding", "boundary", "b_primary"],
@@ -1722,16 +1786,17 @@ test("production: Assistant findings use issue-style scenario, selection, focus 
       await heading(page, title).focus();
       await page.keyboard.press("Space");
       await expectFocused(page, kind, id, before);
+      assert.equal(await page.getByRole("tab", { name: /^Findings\b/ }).getAttribute("aria-selected"), "true",
+        "Pinned card focus keeps the list, matching Issues");
       assert.equal(await heading(page, title).getAttribute("aria-pressed"), "true");
-      assert.equal(await page.locator(".ps-assistant-finding-selected").count(), 1);
+      assert.equal(await page.locator(".ps-review-return").count(), 0, "Pinned focus-only clicks do not add a return strip");
     }
 
     await element(page, "node", "n_client").click();
-    await until(() => page.locator(".ps-assistant-finding-selected").count().then(count => count === 0),
-      "Manual diagram selection clears stale finding feedback");
-    await finding(page, "Flow finding").getByRole("button", { name: "Focus", exact: true }).click();
+    await until(() => page.locator(".ps-finding-card-selected").count().then(count => count === 0),
+      "Manual target selection clears stale card feedback");
+    await heading(page, "Flow finding").click();
     await expectSelected(page, "edge", "e_request");
-
     await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
     await heading(page, "Node finding").click();
     await expectSelected(page, "node", "n_client");
@@ -1740,27 +1805,29 @@ test("production: Assistant findings use issue-style scenario, selection, focus 
     await until(() => page.getByRole("tab", { name: "Properties", exact: true })
       .evaluate(tab => tab === document.activeElement), "Properties receives keyboard focus");
     await page.getByRole("tab", { name: /^Findings\b/ }).click();
-    assert.equal(await heading(page, "Node finding").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator(".ps-review-return").count(), 0, "Manual tab navigation ends the journey");
   });
 });
 
 test("production: Assistant handles detached and unavailable references without creating orphan issues", async () => {
   await run(async ({ page }) => {
-    assert.equal(await heading(page, "Unavailable finding").isDisabled(), true);
-    await finding(page, "Unavailable finding").getByText("No available diagram reference for this finding.").waitFor();
-    assert.equal(await finding(page, "Unavailable finding").getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true);
+    await page.getByRole("button", { name: "Unpin inspector tab", exact: true }).click();
+    const unavailable = await openFinding(page, "Unavailable finding");
+    await unavailable.getByText("No available diagram reference", { exact: true }).waitFor();
+    assert.equal(await unavailable.getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true);
+    await unavailable.getByRole("button", { name: "Findings list", exact: true }).click();
     await heading(page, "Detached finding").click();
     await expectSelected(page, "node", "n_detached");
     assert.equal(await scenario(page).inputValue(), "", "Detached objects use Show all scenarios");
 
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
     await heading(page, "Node finding").click();
     await element(page, "node", "n_client").focus();
     await page.keyboard.press("Delete");
     await until(() => element(page, "node", "n_client").count().then(count => count === 0), "referenced node removed in the current model");
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
     assert.equal(await heading(page, "Node finding").isDisabled(), true, "Removed targets become unavailable");
-    await until(() => page.locator(".ps-assistant-finding-selected").count().then(count => count === 0),
-      "Removed targets clear the selected finding feedback");
-    await finding(page, "Available reference finding").getByRole("button", { name: "Create issue", exact: true }).click();
+    await (await openFinding(page, "Available reference finding")).getByRole("button", { name: "Create issue", exact: true }).click();
     await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || "null")?.doc.issues
       .some(issue => issue.title === "Available reference finding" && issue.targetId === "n_api"), autosaveKey);
   });
@@ -1768,6 +1835,7 @@ test("production: Assistant handles detached and unavailable references without 
 
 test("production: Assistant Chat references share target navigation and preserve the conversation", async () => {
   await run(async ({ page, requests }) => {
+    await openAssistant(page);
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
     await page.getByRole("textbox", { name: "Ask about this model", exact: true }).fill("Locate the synthetic controls");
     await page.getByRole("button", { name: "Send question", exact: true }).click();
@@ -1780,7 +1848,7 @@ test("production: Assistant Chat references share target navigation and preserve
     assert.equal(await scenario(page).inputValue(), "s_primary");
     assert.equal(await page.getByRole("button", { name: "Focus Missing node", exact: true }).isDisabled(), true);
     await page.getByRole("tab", { name: "Properties", exact: true }).click();
-    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await openAssistant(page);
     await page.getByText("Synthetic response only.", { exact: true }).waitFor();
   });
 });
@@ -1788,13 +1856,14 @@ test("production: Assistant Chat references share target navigation and preserve
 for (const savedScenarioId of [null, "s_missing"]) {
   test(`production: Assistant explains missing scenario selection after importing ${savedScenarioId === null ? "Show all" : "an unavailable scenario"}`, async () => {
     await run(async ({ page, requests, importModel }) => {
+      await openAssistant(page);
       const notice = page.locator("#ps-assistant-scenario-notice");
       assert.equal(await notice.count(), 0, "A selected scenario needs no scenario warning");
       const input = modelFixture();
       input.doc.scenarios = [input.doc.scenarios[0]];
       input.view.activeScenarioId = savedScenarioId;
       await importModel(input);
-      await page.getByRole("tab", { name: /^Findings\b/ }).click();
+      await openAssistant(page);
       assert.equal(await scenario(page).inputValue(), "", "Import preserves Show all instead of choosing a scenario");
       assert.equal(await page.locator(".react-flow__node-process").count(), input.doc.nodes.length);
       assert.equal(await page.getByRole("button", { name: "Analyze model", exact: true }).isDisabled(), true);
@@ -1834,6 +1903,7 @@ for (const savedScenarioId of [null, "s_missing"]) {
 
 test("production: Assistant explains a model with no scenarios without treating nodes as a scenario", async () => {
   await run(async ({ page, requests, importModel }) => {
+    await openAssistant(page);
     const input = modelFixture();
     input.doc.scenarios = [];
     input.view.activeScenarioId = null;
@@ -1845,4 +1915,196 @@ test("production: Assistant explains a model with no scenarios without treating 
     assert.equal(await page.getByRole("combobox", { name: "Scenario", exact: true }).inputValue(), "");
     assert.equal(requests.length, 1, "A model without scenarios sends no additional AI context");
   });
+});
+
+test("production Findings: exact issue identity, unique totals, Undo/Redo, reanalysis and reload", async () => {
+  const initial = fixture();
+  initial.doc.issues.push({ ...initial.doc.issues[0], id: "i_title_decoy", title: "Node finding",
+    description: "Independent existing record with the same title.", targetId: "n_api" });
+  await run(async ({ page, requests }) => {
+    await settleReviewGeometry(page);
+    const panel = page.locator("#ps-inspector-panel-findings");
+    const total = await page.locator("#ps-inspector-tab-findings .ps-inspector-tab-count").textContent();
+    const detail = await openFinding(page, "Node finding");
+    const before = await savedState(page);
+    await detail.getByRole("button", { name: "Create issue", exact: true }).dblclick();
+    const after = await savedState(page);
+    const created = after.doc.issues.filter(issue => !before.doc.issues.some(previous => previous.id === issue.id));
+    assert.equal(created.length, 1, "Repeated Save creates exactly one real issue");
+    assert.equal(created[0].targetId, "n_client");
+    assert.equal(created[0].status, "Active", "Open is a display label, not a persisted enum migration");
+    assert.equal(await page.locator("#ps-inspector-tab-findings .ps-inspector-tab-count").textContent(), total,
+      "The explicit live/saved pair counts once");
+    assert.deepEqual(after.doc.issues.find(issue => issue.id === "i_title_decoy"), before.doc.issues.find(issue => issue.id === "i_title_decoy"));
+    assert.equal(after.past.length, before.past.length + 1);
+    assert.equal(await detail.getByRole("button", { name: "Issue created", exact: true }).isDisabled(), true);
+    assert.ok((await detail.innerText()).includes(created[0].id), "The common detail retains the returned ID");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await savedState(page)).doc, before.doc);
+    await detail.getByRole("status").filter({ hasText: "previously created issue is no longer available" }).waitFor();
+    assert.equal(await detail.getByRole("button", { name: "Create issue", exact: true }).isDisabled(), true,
+      "Undo must not allow a replacement issue or a title-twin lookup");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.deepEqual((await savedState(page)).doc, after.doc);
+    await detail.getByRole("button", { name: "Resolve", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "no longer matches these filters" }).waitFor();
+    assert.equal(await panel.getByLabel("Findings status").inputValue(), "attention");
+    assert.equal(await aiCards(page).count(), findings.length - 1);
+    await panel.getByLabel("Findings status").selectOption("all");
+    assert.equal(await aiCards(page).count(), findings.length);
+    const beforeAnalysis = await savedState(page);
+    await openAssistant(page);
+    await page.getByRole("button", { name: "Analyze model", exact: true }).click();
+    await until(() => requests.length === 2 && page.getByRole("button", { name: "Analyze model", exact: true }).isEnabled(), "new retained generation");
+    await page.getByRole("button", { name: `Review findings (${findings.length})`, exact: true }).click();
+    assert.equal(await aiCards(page).count(), findings.length);
+    assert.equal(await panel.locator(`.ps-finding-card[data-finding-id="${created[0].id}"]`).getAttribute("data-finding-source"), "review",
+      "A later generation does not invent a historical AI origin");
+    assert.equal(await page.locator("#ps-inspector-tab-findings .ps-inspector-tab-count").textContent(), String(Number(total) + 1));
+    const afterAnalysis = await savedState(page);
+    assert.notEqual(afterAnalysis.doc.findingAnalysis.id, beforeAnalysis.doc.findingAnalysis.id);
+    assert.deepEqual(afterAnalysis.doc.issues, beforeAnalysis.doc.issues);
+    assert.equal(afterAnalysis.past.length, beforeAnalysis.past.length + 1, "Reanalysis is one undoable saved-review replacement");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await savedState(page)).doc, beforeAnalysis.doc);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.deepEqual((await savedState(page)).doc, afterAnalysis.doc);
+    await page.reload();
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await panel.getByLabel("Findings status").selectOption("all");
+    assert.equal(await aiCards(page).count(), findings.length, "AI findings persist as required by current main");
+    const savedCard = panel.locator(`.ps-finding-card[data-finding-id="${created[0].id}"]`);
+    await savedCard.getByRole("button", { name: "Details", exact: true }).click();
+    await commonDetail(page).getByText("Evidence and source", { exact: true }).click();
+    await commonDetail(page).getByText("Saved issue; original source not recorded.", { exact: true }).waitFor();
+    assert.deepEqual((await savedState(page)).doc, afterAnalysis.doc);
+  }, { initial });
+});
+
+test("production Findings: integrated STRIDE design remains readable in the normal and short inspector", async () => {
+  const initial = fixture();
+  const saved = findingsFixture();
+  initial.doc.issues = saved.doc.issues;
+  initial.doc.deviations = saved.doc.deviations;
+  initial.doc.nodes[0].title = "Support agent";
+  initial.doc.nodes[1].title = "Trace store";
+  initial.doc.nodes[2].title = "Retrieval index";
+  initial.doc.edges[0].title = "Prompt traces";
+  initial.doc.scenarios[0].name = "Support refunds";
+  initial.doc.scenarios[1].name = "Operations review";
+  const responses = findings.map((finding, index) => index === 0 ? {
+    ...finding, title: "Prompt logs may expose customer identifiers", category: "Information disclosure", references: [flow],
+    rationale: "People who can read traces may access customer data they do not need.",
+    recommendation: "Check trace redaction, readers and retention before enabling prompt logging.",
+  } : index === 1 ? {
+    ...finding, title: "Retrieved instructions can redirect tool calls", category: "Tampering", references: [client],
+    rationale: "Untrusted retrieved text reaches the action planner without a described instruction boundary.",
+    recommendation: "Verify permitted tool actions with an adversarial passage before enabling the flow.",
+  } : finding);
+  await run(async ({ page, requests }) => {
+    const panel = page.locator("#ps-inspector-panel-findings");
+    const scroller = panel.locator(".ps-findings");
+    const screenshot = async name => {
+      if (process.env.SDS_TEST_OUTPUT_DIR) await page.screenshot({ path: resolve(process.env.SDS_TEST_OUTPUT_DIR, name) });
+    };
+    await page.setViewportSize({ width: 1366, height: 900 });
+    await scroller.evaluate(element => { element.scrollTop = 0; });
+    assert.deepEqual(await panel.getByRole("columnheader").allTextContents(),
+      ["Category", "AI analysis", "Analyzer rules", "Saved notes / issues", "Service-model deviations"]);
+    assert.equal(await panel.locator("tbody tr").count(), 7);
+    assert.equal(await page.locator("#ps-inspector-panel-assistant .ps-finding-card").count(), 0, "No competing AI-only finding list");
+    const geometry = await panel.evaluate(panel => {
+      const scroller = panel.querySelector(".ps-findings").getBoundingClientRect();
+      const first = panel.querySelector(".ps-finding-card");
+      const next = [...first.querySelectorAll("p")].find(p => p.textContent.startsWith("Next:")).getBoundingClientRect();
+      return { nextBottom: next.bottom, bottom: scroller.bottom,
+        headersFit: [...panel.querySelectorAll("thead th")].every(th => th.scrollWidth <= th.clientWidth + 1) };
+    });
+    const activeTab = await page.locator("#ps-inspector-tab-findings").evaluate(tab => {
+      const bounds = tab.getBoundingClientRect(), strip = tab.parentElement.getBoundingClientRect();
+      return bounds.left >= strip.left - 1 && bounds.right <= strip.right + 1;
+    });
+    await screenshot("stride-findings-integrated-normal.png");
+    assert.equal(activeTab, true, "The active Findings tab remains visible after leaving AI Assistant");
+    assert.ok(geometry.headersFit, "All source header text wraps inside its column");
+    assert.ok(geometry.nextBottom <= geometry.bottom + 1, `Matrix and the first problem/place/Why/Next are readable together: ${JSON.stringify(geometry)}`);
+    const cell = panel.getByRole("button", { name: "STRIDE Information disclosure, AI analysis: 1 finding", exact: true });
+    await cell.click();
+    assert.equal(await panel.locator(".ps-finding-card").count(), 1);
+    await finding(page, responses[0].title).getByRole("button", { name: "Details", exact: true }).click();
+    const detail = commonDetail(page);
+    await detail.getByRole("heading", { name: "STRIDE classification", exact: true }).waitFor();
+    await screenshot("stride-findings-common-detail.png");
+    await detail.getByRole("button", { name: /^View affected element:/ }).click();
+    await expectSelected(page, "edge", "e_request");
+    await screenshot("stride-findings-exact-target.png");
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Findings", exact: true }).click();
+    assert.equal(await cell.getAttribute("aria-pressed"), "true");
+    await panel.getByRole("button", { name: "Clear selected evidence count", exact: true }).click();
+    await page.setViewportSize({ width: 768, height: 600 });
+    await scroller.evaluate(element => { element.scrollTop = 0; });
+    await screenshot("stride-findings-short-matrix.png");
+    await panel.getByRole("button", { name: "Collapse", exact: true }).click();
+    await screenshot("stride-findings-short-list.png");
+    await page.setViewportSize({ width: 320, height: 480 });
+    await finding(page, responses[0].title).getByRole("button", { name: "Details", exact: true }).click();
+    const nextAction = detail.locator(".ps-finding-next");
+    await nextAction.scrollIntoViewIfNeeded();
+    assert.equal(await nextAction.evaluate(section => {
+      const bounds = section.getBoundingClientRect(), inspector = section.closest(".ps-inspector").getBoundingClientRect();
+      return bounds.top >= inspector.top - 1 && bounds.bottom <= inspector.bottom + 1;
+    }), true, "The complete next action, not only its heading, remains readable at 320x480");
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    await screenshot("stride-findings-narrow-detail.png");
+    assert.equal(requests.length, 1, "The whole review journey uses only the one synthetic analysis response");
+  }, { initial, respond: ({ route }) => reply(route, { answer: "Synthetic design review only; no runtime evidence inspected.", findings: responses, references: [] }) });
+});
+
+test("production Findings: duplicate response IDs retain the prior review, exact Save link and Back context", async () => {
+  let pending;
+  await run(async ({ page, requests }) => {
+    await settleReviewGeometry(page);
+    const detail = await openFinding(page, "Node finding");
+    const beforeSave = await savedState(page);
+    await detail.getByRole("button", { name: "Create issue", exact: true }).click();
+    const saved = await savedState(page);
+    const created = saved.doc.issues.find(issue => !beforeSave.doc.issues.some(old => old.id === issue.id));
+    assert.ok(created);
+    assert.equal(created.targetId, "n_client");
+    const identity = await detail.getAttribute("data-review-id");
+    await openAssistant(page);
+    await page.getByRole("button", { name: "Analyze model", exact: true }).click();
+    await until(() => !!pending, "ambiguous analysis request held");
+    await page.getByRole("tab", { name: /^Findings\b/ }).click();
+    await detail.getByRole("button", { name: /^View affected element:/ }).click();
+    await expectSelected(page, "node", "n_client");
+    await page.getByRole("button", { name: "Back to finding", exact: true }).waitFor();
+    await reply(pending, { answer: "This ambiguous response must not replace the review.", references: [], findings: [
+      { ...findings[0], title: "First duplicate problem", references: [client] },
+      { ...findings[0], title: "Second duplicate problem", references: [api] },
+    ] });
+    await until(() => page.locator(".ps-assistant-error").textContent()
+      .then(text => text?.includes("Finding IDs must be unique")), "duplicate response rejected visibly");
+    await page.getByRole("button", { name: "Back to finding", exact: true }).click();
+    assert.equal(await detail.getAttribute("data-review-id"), identity, "The retained generation and return identity do not change");
+    await detail.getByRole("heading", { name: "Node finding", exact: true }).waitFor();
+    assert.equal(await detail.getByRole("button", { name: "Issue created", exact: true }).isDisabled(), true);
+    assert.ok((await detail.innerText()).includes(created.id));
+    assert.equal(await aiCards(page).count(), findings.length);
+    assert.equal(await page.getByText("First duplicate problem", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("Second duplicate problem", { exact: true }).count(), 0);
+    await detail.getByRole("button", { name: "Edit issue and replies", exact: true }).click();
+    const row = page.locator(`#ps-inspector-panel-issues [data-review-id="${created.id}"] .ps-allissues-rowhead`);
+    await until(() => row.evaluate(control => control === control.ownerDocument.activeElement), "The original exact saved issue remains linked");
+    const after = await savedState(page);
+    for (const field of ["doc", "past", "future"]) assert.deepEqual(after[field], saved[field], field);
+    await openAssistant(page);
+    await page.getByRole("alert").filter({ hasText: "Finding IDs must be unique" }).waitFor();
+    assert.equal(requests.length, 2, "Rejection does not retry or infer a replacement automatically");
+  }, { respond: ({ route, index }) => {
+    if (index === 0) return reply(route, { answer: "Valid retained review.", findings, references: [] });
+    pending = route;
+  } });
 });
