@@ -1,6 +1,6 @@
 # SecureDesignStudio user guide
 
-*Updated: 2026-11-09 - Documented first-run open/import, AI providers and Simulate breach.*
+*Updated: 2026-11-20 - Cross-platform setup and unified Findings guidance.*
 
 **Contents**
 
@@ -57,30 +57,42 @@ isolation; a clean analysis does not prove real services secure or compliant.
 
 ## 2. How to install and run
 
-### From source on Windows
+### From source on Windows, macOS, or Linux
 
-Use Git, PowerShell, a current browser, and **Node.js 24 LTS with npm**.
+Use Git, a terminal, current Edge or Chrome, and **Node.js 24 LTS with npm**.
 The locked frontend toolchain requires Node 22.12 or later; Node 24 LTS is
 the recommended choice and also supports the repository's contributor checks.
-Use the repository URL supplied by the distribution or its owner. Ordinary
-modeling needs no Azure account, API, MCP server or cloud resource.
+Ordinary modeling needs no Azure account, API, MCP server or cloud resource.
 
-```powershell
-git clone <repository-url> SecureDesignStudio
+| Platform | Setup notes |
+|---|---|
+| Windows | Install [Git for Windows](https://git-scm.com/install/windows) and [Node.js 24 LTS](https://nodejs.org/en/download) with npm and PATH enabled. PowerShell is included with Windows; Windows Terminal can host it. If available, `winget install --id Git.Git --exact --source winget` and `winget install --id OpenJS.NodeJS.LTS --exact --source winget` are installer alternatives; verify the installed Node major version. |
+| macOS / Linux | Install [Git](https://git-scm.com/downloads) and Node.js 24 LTS. A version manager such as [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm) can install/select official Node builds. |
+
+Follow your organization's software-installation process. Reopen your terminal,
+then verify `git --version`, `node --version`, and `npm --version`.
+In Windows PowerShell, use `npm.cmd` wherever this guide says `npm` if
+PowerShell blocks the `npm.ps1` wrapper; no execution-policy change is needed.
+Node should report `v24.x.x` for the recommended setup.
+
+From a folder where you keep projects:
+
+```sh
+git clone https://github.com/microsoft/SecureDesignStudio.git
 cd SecureDesignStudio
-.\Start-SecureDesignStudio.ps1
+npm start
 ```
 
-The launcher is in the repository root, so there is no folder to hunt for. It
-verifies your prerequisites before doing anything: if Node.js, npm, or a
-supported version is missing, it names what is missing and the exact command
-that installs it, instead of failing with a raw error. It then installs
-dependencies on first run, repairs missing or incompatible direct dependencies
-after updates, and starts the app.
+`npm start` runs the cross-platform prerequisite-checking launcher
+`scripts/launch.mjs`. It installs dependencies with `npm ci` on first run,
+repairs missing or incompatible direct dependencies after updates, and starts
+the app. Initial installation needs internet access. Alternative wrappers
+from the repository root are `.\Start-SecureDesignStudio.ps1` on Windows
+and `./start-securedesignstudio.sh` on macOS/Linux.
 
 Open **http://localhost:5173/**. Keep that terminal running; Ctrl+C stops it.
 Port 5173 is strict: the launcher checks it first and, when it is busy, reports
-the owning process. Stop only your own server, and never an unfamiliar process
+how to inspect its owner. Stop only your own server, and never an unfamiliar process
 on a shared machine. Follow the
 [port guidance](#8-troubleshooting-and-quick-reference).
 
@@ -89,7 +101,7 @@ After initial page load, editing, analysis, autosave, and local file operations
 work offline. External help links and optional network features are separate.
 
 If you prefer to run the underlying steps yourself, `npm ci` followed by
-`npm run dev` is equivalent and performs no prerequisite checks.
+`npm run dev` starts the same local mode without the launcher's prerequisite checks.
 
 ### Start with the optional AI assistant
 
@@ -101,6 +113,12 @@ guide except Chat, AI Analysis, Simulate breach and Design with AI works
 without it.
 
 Choose a provider at startup. The remaining setup differs by provider:
+
+On any supported OS, use `npm run start:ai -- --provider azure` (or `claude`
+or `codex`). On macOS/Linux, `./start-securedesignstudio-with-ai.sh` accepts
+the same options. The PowerShell examples below are Windows alternatives.
+See [cross-platform AI startup](bring-your-own-ai.md#cross-platform-startup)
+for diagnostics and Node build requirements.
 
 | Requirement | Notes |
 |---|---|
@@ -140,9 +158,9 @@ Inspect `git status --short --branch` in the clone. Save a `.tma` backup,
 stop only your own server, preserve local changes, and confirm the intended
 branch before running:
 
-```powershell
+```sh
 git pull --ff-only
-.\Start-SecureDesignStudio.ps1
+npm start
 ```
 
 The launcher checks installed direct dependencies and runs `npm ci` when
@@ -154,14 +172,14 @@ a shared preview branch.
 
 ### From a trusted standalone HTML file
 
-A trusted `dist-single\index.html` or exported standalone HTML opens directly
+A trusted `dist-single/index.html` or exported standalone HTML opens directly
 in a browser without Git, Node, or a server. Obtain it from an approved source;
 no public download or release package is assumed.
 
 To build it from your trusted clone, run `npm run build:single` and open
-`dist-single\index.html`. This does not deploy a website. Standalone editing
+`dist-single/index.html`. This does not deploy a website. Standalone editing
 works offline, but enabled collaboration can contact services, unlike
-`.\Start-SecureDesignStudio.ps1`.
+`npm start`.
 
 ## 3. Simple how-to
 
@@ -260,8 +278,10 @@ creation remains available. To enable AI, use the existing explicitly configured
 [optional AI workflow](advanced-configuration.md#optional-local-design-assistant);
 this feature introduces no new service or credential setting.
 
+### Build a model manually
+
 Use synthetic data for **Submit a support case**: a web frontend calls an API
-that writes to Dataverse. Authentication and retention below are practice
+that writes to a storage account. Authentication and retention below are practice
 assumptions, not service policy recommendations.
 
 1. **Start a scenario.** In a blank app, name it in **Create your first
@@ -640,8 +660,12 @@ snapshot nor an available definition, the ID remains unresolved. See
 active and staged filters. Only visibility changes.
 
 Inspector tabs cover Properties, Edges, Issues, Comments, Changes, Data, Work,
-and Findings. Tabs with a count show it beside the label; Findings counts the
-AI findings from the most recent AI Analysis. Pin to retain a tab; ordinary
+and Findings. Tabs with a count show it beside the label. **Review > Findings**
+opens the unified review list with saved notes/issues, local analysis,
+service-model deviations, and the latest retained AI findings. Its STRIDE
+evidence table and scope/source/status filters organize retained evidence;
+zero counts do not establish security coverage or a pass. AI is not required
+to review local findings. Pin to retain a tab; ordinary
 unpinned tabs follow
 selection, while Edges/Changes retain context. Resize with the separator or
 its arrow keys; double-click to reset. **View > Inspector** closes/reopens it.
@@ -1376,17 +1400,18 @@ models take precedence when reopened. See
 
 | Problem | Action |
 |---|---|
-| Port 5173 is occupied | The launcher reports the owning process and stops. Stop only your own server in its terminal; coordinate with other owners. Do not change ports or kill unknown processes. Inspect with `Get-NetTCPConnection -LocalPort 5173 -State Listen`. |
-| Clone denied / Node version error | Obtain private GitHub access; Azure credentials are unrelated. The launcher checks Node, names the fix, and offers to install Node 24 LTS for you. |
-| Script blocked by execution policy | PowerShell may refuse an unsigned local script. Run `Unblock-File .\Start-SecureDesignStudio.ps1`, or start it with `powershell -ExecutionPolicy Bypass -File .\Start-SecureDesignStudio.ps1`. |
-| Design Assistant missing or failing | It is bring your own AI and needs a configured provider. For Azure, run `.\Start-SecureDesignStudio-WithAI.ps1 -Provider Azure -VerifyEndpoint`. For Claude or Codex, run `.\Start-SecureDesignStudio-WithAI.ps1 -Provider Claude -DiagnoseProvider` (or `-Provider Codex`). Then see [bring your own AI](bring-your-own-ai.md). |
+| Port 5173 is occupied | The launcher stops and gives an owner-inspection command: `Get-NetTCPConnection -LocalPort 5173 -State Listen` on Windows, `lsof -nP -iTCP:5173 -sTCP:LISTEN` on macOS, or `ss -ltnp 'sport = :5173'` on Linux. Stop only your own server in its terminal; coordinate with other owners. Do not change ports or kill unknown processes. |
+| Public clone fails | Check the public URL `https://github.com/microsoft/SecureDesignStudio.git`, network/proxy access, and your organization's GitHub access controls. This public repository needs no GitHub sign-in or private-repository access; Azure credentials are unrelated. |
+| Node version error | Install or select official Node.js 24 LTS with npm through your approved setup, reopen the terminal, and check `node --version`. The cross-platform launcher reports prerequisite fixes; it does not install Node for you. |
+| PowerShell script blocked by execution policy | Use `npm.cmd start` instead of a `.ps1` launcher or `npm.ps1`. No execution-policy change is needed. If organizational controls block Node/npm themselves, ask your IT administrator. |
+| Design Assistant missing or failing | It is bring your own AI and needs a configured provider. For Azure, use `npm run start:ai -- --provider azure --verify-endpoint` (probe may incur usage). For Claude or Codex, use `npm run start:ai -- --provider claude --diagnose-provider` (or `--provider codex`). See [bring your own AI](bring-your-own-ai.md). |
 | Missing node, flow, or sequence participant | Check the active scenario, use Show all in Diagram if needed, and Filter > Clear all. Sequence requires a scenario and only shows nodes with visible flows. |
 | Cannot create nodes or boundaries | Create/select a scenario first. Show all is not an authoring scenario. |
 | Cannot attach a data item | Check its classification, request/response direction, and receiver policy. Do not weaken policy just to remove a warning. |
 | Storage denied/full or recovery missing | Save `.tma`. Check profile/origin and storage permissions; back up before clearing site data. Working in memory does not guarantee refresh recovery. |
 | Unknown/disabled auth or conflicting definitions | Preserve IDs; review Customize authentication warnings, import needed library JSON, and resolve explicitly. These warnings are independent of build-version compatibility. |
 | Authentication compatibility information | In Model > Customize authentication, expand **Affected items** for methods, flows, and node-type policies across the whole diagram, including inactive/unassigned flows and unused saved policies. Counts are unique per category. Only a running app older than the required version (0.1.5 for new/custom IDs) gets a compatibility warning; a compatible build keeps the neutral inventory. Unknown versions are explicitly undetermined. This is not an authentication failure or older-peer detection. Keep an editable `.tma` backup. |
-| Collaboration or Design Assistant unavailable locally | Expected with `.\Start-SecureDesignStudio.ps1`. Use `.\Start-SecureDesignStudio-WithAI.ps1` for the assistant. Do not add collaboration endpoint overrides; use approved optional modes only when needed. |
+| Collaboration or Design Assistant unavailable locally | Expected with `npm start`. Use the configured `npm run start:ai` workflow for the assistant. Do not add collaboration endpoint overrides; use approved optional modes only when needed. |
 | Inspector hidden or stays on the wrong tab | View > Inspector reopens it; View > Properties selects details. Unpin if you want ordinary tabs to follow selection. |
 
 **Essential shortcuts** (use Cmd instead of Ctrl on macOS):
