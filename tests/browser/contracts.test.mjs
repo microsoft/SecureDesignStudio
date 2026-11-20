@@ -505,7 +505,7 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
     await scenario(page).selectOption("s_primary");
     await waitForMeasuredDiagram(page);
     const before = await savedDiagram(page);
-    const button = page.getByRole("button", { name: "Declutter diagram", exact: true });
+    const button = page.getByRole("button", { name: "Optimize diagram", exact: true });
     await button.click();
     await until(async () => (await savedDiagram(page)).past.length === before.past.length + 1, "one Declutter snapshot");
     const after = await savedDiagram(page);
@@ -603,7 +603,7 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
     const before = await savedDiagram(page);
     const expectedMemberships = [[id(1), id(2)], [id(2)]];
     assert.deepEqual(before.doc.boundaries.map(b => b.nodeIds), expectedMemberships);
-    await page.getByRole("button", { name: "Declutter diagram", exact: true }).click();
+    await page.getByRole("button", { name: "Optimize diagram", exact: true }).click();
     const arranged = await savedDiagram(page);
     assert.deepEqual(declutterMeaning(arranged.doc), declutterMeaning(before.doc));
     for (const boundary of arranged.doc.boundaries) for (const node of arranged.doc.nodes) {
@@ -659,9 +659,10 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
 test("usability: Declutter stays beside zoom controls at 320px and reports unsupported boundaries without mutation", async () => {
   await harness.run("usability: Declutter control and fail-closed boundaries", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 });
-    const button = page.getByRole("button", { name: "Declutter diagram", exact: true });
+    const button = page.getByRole("button", { name: "Optimize diagram", exact: true });
     const group = page.getByRole("group", { name: "Canvas zoom controls", exact: true });
-    assert.equal(await group.getByRole("button").last().getAttribute("aria-label"), "Declutter diagram");
+    assert.equal(await group.getByRole("button").last().getAttribute("aria-label"), "Optimize diagram");
+    assert.equal(await button.innerText(), "Optimize");
     const bounds = await button.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320, "control stays inside viewport");
     await waitForMeasuredDiagram(page);

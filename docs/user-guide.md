@@ -32,14 +32,14 @@ Nodes, edges, and boundaries are shared across scenarios. Renaming a shared
 node changes it everywhere; changing a scenario's flow order does not.
 Selecting a scenario hides objects outside its membership.
 
-Use **Declutter**, beside the bottom-left zoom controls, to arrange the visible
+Use **Optimize**, beside the bottom-left zoom controls, to arrange the visible
 nodes, boundaries, annotations and flows with space for their full labels.
 The result is saved geometry: continue dragging or editing immediately, save
 normally, or use one ordinary **Undo** to restore the previous layout.
 Shared objects use the same geometry in every scenario; hidden objects stay
 in place, although a shared boundary may expand to contain its moved members.
 Use Show all to arrange the whole model. Crossing (neither disjoint nor nested)
-boundary memberships cannot be arranged automatically; Declutter reports this
+boundary memberships cannot be arranged automatically; Optimize reports this
 without changing the document. Dense models can still need manual routing and
 zooming to inspect individual flows.
 
@@ -47,7 +47,7 @@ TM7 imports bind boundaries to the original fully enclosed stencils, including
 nested and overlapping scopes. Re-import the original TM7 to recover bindings
 missing from an older import. Shared boundary/node pairs retain their first
 observed containment, with conflicting later tabs disclosed during import.
-Declutter keeps the full flow title and visible communication-profile and
+Optimize keeps the full flow title and visible communication-profile and
 authentication indicators when specified. Editing those fields updates the
 indicators without rewriting the imported title.
 
