@@ -88,7 +88,7 @@ flowchart LR
 | UC-06 | Describe how each flow is secured | Author | Inspector **Properties** for a flow |
 | UC-07 | Describe data, classification and retention | Author | **Model > Data Elements**, flow and node **Privacy** |
 | UC-08 | Reuse components across scenarios and walk the call order | Author | Scenario membership, **View > Sequence** |
-| UC-09 | Analyze the model and triage findings | Reviewer | **Review > Analyze**, **Review > Issues** |
+| UC-09 | Analyze the model and triage findings | Reviewer | **Review > Analyze**, **Review > Issues**, **Review > Findings** |
 | UC-10 | Record discussion and authored threat notes | Reviewer | **Review > Comments**, **Add threat note** |
 | UC-11 | Review evidence-backed deviations | Reviewer | **Review > Deviations** |
 | UC-12 | Track follow-up work and hand it to Azure DevOps | Reviewer | **Model > Work Items**, Work inspector tab |
@@ -207,12 +207,12 @@ flowchart LR
 - **Preconditions:** A model with nodes or flows to review.
 - **Main flow:**
   1. The reviewer chooses **Review > Analyze**. Local rules run across the whole document, not only the visible scenario.
-  2. **Review > Issues** lists findings. The reviewer opens one to jump to its node or flow.
+  2. **Review > Issues** lists saved issues. **Review > Findings** brings together analyzer rules, saved notes/issues, service-model deviations and retained AI findings with scope/source/status filters and a STRIDE evidence table. The reviewer opens a finding to inspect its evidence and locate its target.
   3. The author corrects the model and the reviewer runs Analyze again. Still-triggered findings keep their status and replies; fixed ones are removed.
   4. The reviewer resolves findings they accept, or replies to discuss them.
 - **Alternatives:** A rule or required definition is unavailable; the finding is kept and labeled **Not re-evaluated** rather than cleared. A Custom Library adds required-field or GUID checks.
 - **Outcome:** A reconciled, reviewable list of findings.
-- **Does not establish:** A clean Analyze run does not mean the design is secure or compliant. Resolution records a decision, not a fix.
+- **Does not establish:** A clean Analyze run or zero STRIDE count does not mean the design is secure or compliant. Category labels organize evidence, not verified threats. Resolution records a decision, not a fix.
 
 ### UC-10 Record discussion and authored threat notes
 

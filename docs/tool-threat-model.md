@@ -143,7 +143,7 @@ the selected CLI through `api/design-assistant/localProviders.ts`.
 | Tampering | A malicious or vulnerable npm package | Exact lockfile; CI runs `npm ci --ignore-scripts` and fails on high-severity advisories in all app dependencies (dev dependencies are runtime here) and in API production dependencies. The standalone inliner is repository code, not a plugin | The launchers run plain `npm ci` on users' machines, so install scripts run there |
 | Tampering | A compromised GitHub Action | Every `uses:` is pinned to a commit SHA; the token has `contents: read`; checkout does not persist credentials | SHA pins need deliberate updates |
 | Spoofing, Tampering | A user downloads a modified build | The release workflow builds from the version tag, publishes `SHA256SUMS`, a CycloneDX SBOM and a GitHub build-provenance attestation, and stops at a draft a maintainer reviews. [Verifying a release download](release-verification.md) explains the checks | Protects only users who run the checks. The workflow has not produced a release yet |
-| Tampering | Line endings break shell scripts | The LF checkout policy is supplied by the separate line-ending PR #30 | Until that PR is merged, check shell-script line endings before running a Windows-origin checkout on POSIX |
+| Tampering | Line endings break shell scripts | The tracked `.gitattributes` enforces LF for `.sh` wrappers and CRLF for PowerShell scripts | Editors and external archive/copy tools must preserve the expected line endings |
 
 ## Assumptions and out of scope
 

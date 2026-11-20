@@ -4,7 +4,7 @@
 
 The AI Design Assistant is **bring-your-own-AI**. No model service ships with
 SecureDesignStudio, none is shared with you, and the app has no default AI
-service account. `Start-SecureDesignStudio-WithAI.ps1` offers Azure
+service account. The optional AI launcher offers Azure
 OpenAI/Foundry, Claude Code, and Codex. Azure requires your authorized deployment;
 Claude and Codex use their official CLI with your eligible consumer subscription.
 
@@ -15,6 +15,38 @@ run this API dependency set. Updating this configuration does not deploy it.
 
 ## Choose a provider at startup or in SDS
 
+### Cross-platform startup
+
+From the repository folder on Windows, macOS, or Linux:
+
+```sh
+npm run start:ai -- --provider azure
+npm run start:ai -- --provider claude
+npm run start:ai -- --provider codex
+```
+
+Choose **one** command after completing that provider's setup. In Windows
+PowerShell, use `npm.cmd` if the `npm.ps1` wrapper is blocked. On macOS/Linux,
+`./start-securedesignstudio-with-ai.sh` accepts the same options after the
+script name. Omit `--provider` for an interactive menu; supply it in
+non-interactive sessions.
+
+Use `npm run start:ai -- --help` for all options. For Claude/Codex readiness
+without starting servers or making an inference request:
+
+```sh
+npm run start:ai -- --provider codex --diagnose-provider
+```
+
+Claude/Codex readiness requires Node's TypeScript type stripping. Some Linux
+distribution builds omit it even on Node 24; use an official Node build,
+for example through nvm or fnm, if the launcher reports this limitation.
+For Azure, `--verify-endpoint` sends a probe inference request and may incur
+usage. Debug flags are `--debug-ai` and `--debug-ai-content`; the latter records
+model content locally, so read the diagnostic data-handling guidance below.
+
+### Windows PowerShell alternatives
+
 ```powershell
 .\Start-SecureDesignStudio-WithAI.ps1                 # interactive menu
 .\Start-SecureDesignStudio-WithAI.ps1 -Provider Azure
@@ -22,7 +54,7 @@ run this API dependency set. Updating this configuration does not deploy it.
 .\Start-SecureDesignStudio-WithAI.ps1 -Provider Codex
 ```
 
-Non-interactive launchers must supply `-Provider`. Every option needs Node.js.
+Non-interactive PowerShell launchers must supply `-Provider`. Every option needs Node.js.
 Claude and Codex use a local Vite bridge and do not require Azure Functions Core
 Tools, the API package, or Azure credentials. Only Azure needs Functions Core
 Tools, Azure CLI, endpoint/deployment configuration, and Entra access. The Azure
@@ -549,7 +581,7 @@ than an opaque failure in the browser:
 | `404` `DeploymentNotFound` | Wrong deployment name | List deployments ([section 3](#3-deploy-a-model)) |
 | Assistant fails although the probe passes | Deployed model rejects the request parameters | Deploy a GPT-4-class model ([section 3](#3-deploy-a-model)) |
 | Requests fail only via the app | No signed-in identity for the local API | Run `az login`, restart the launcher |
-| API on port 7071 will not start | Unsupported Node version for the Functions host | Use Node 24 LTS or Node 22; the launcher warns and offers to install it |
+| API on port 7071 will not start | Unsupported Node version for the Functions host | Install or select official Node 24 LTS (recommended) or Node 22 through your approved setup, then reopen the terminal. The cross-platform launcher warns but does not install Node. The Windows PowerShell AI launcher can separately offer an opt-in installation. |
 
 An API key is never a valid fix for any row above. If a suggestion involves
 re-enabling key authentication, it is working around the security posture in

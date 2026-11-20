@@ -4,7 +4,7 @@
 
 Start with the [user guide](user-guide.md). None of the optional service
 configuration below is required for ordinary modeling with
-`.\Start-SecureDesignStudio.ps1`. Use approved endpoints and synthetic models
+`npm start` on Windows, macOS, or Linux. Use approved endpoints and synthetic models
 when experimenting. This page does not authorize a deployment or changing
 someone else's running preview.
 
@@ -12,14 +12,18 @@ someone else's running preview.
 
 | Mode | Local processes and network behavior |
 |---|---|
-| `.\Start-SecureDesignStudio.ps1` (`npm run dev`) | Vite only, strict `http://localhost:5173/`. No Azure credentials, API, room persistence, or model-service requests. Room/key fragments are ignored and left untouched. |
-| `.\Start-SecureDesignStudio-WithAI.ps1 -Provider Claude|Codex` (`npm run dev:ai:local`) | Explicit opt-in: Vite on 5173 serves the app and local CLI bridge in one process. No Azure Functions host, API package installation, or Azure credentials. Collaboration stays disabled. |
-| `.\Start-SecureDesignStudio-WithAI.ps1 -Provider Azure` (`npm run dev:ai`) | Explicit opt-in: Vite on 5173, API build watcher, and local Azure Functions on 7071. The bridge calls your Azure deployment. Collaboration stays disabled. |
+| `npm start` (`npm run dev`) | Vite only, strict `http://localhost:5173/`. No Azure credentials, API, room persistence, or model-service requests. Room/key fragments are ignored and left untouched. |
+| `npm run start:ai -- --provider claude` or `--provider codex` (`npm run dev:ai:local`) | Explicit opt-in: Vite on 5173 serves the app and local CLI bridge in one process. No Azure Functions host, API package installation, or Azure credentials. Collaboration stays disabled. |
+| `npm run start:ai -- --provider azure` (`npm run dev:ai`) | Explicit opt-in: Vite on 5173, API build watcher, and local Azure Functions on 7071. The bridge calls your Azure deployment. Collaboration stays disabled. |
 | Deployed `dist` | Local modeling by default. Collaboration and Assistant require explicit build configuration; using them is a network operation. |
 | Standalone `dist-single\index.html` | Browser-openable local editor by default. Explicitly configured services may use the network; collaboration also requires a hosted share destination. |
 
-The launchers are prerequisite-checking wrappers around the npm scripts shown
-in parentheses; the npm scripts remain available and perform no checks.
+`npm start` and `npm run start:ai` are prerequisite-checking launchers, as are
+the root PowerShell and POSIX wrappers. The lower-level npm scripts shown
+in parentheses remain available without those launcher checks. Windows
+PowerShell users can substitute `npm.cmd` if `npm.ps1` is blocked.
+See [cross-platform AI startup](bring-your-own-ai.md#cross-platform-startup);
+the detailed PowerShell examples below are Windows alternatives.
 
 Local Vite rejects `VITE_COLLAB_TOKEN_ENDPOINT` and
 `VITE_DESIGN_ASSISTANT_ENDPOINT` overrides. Do not use overrides to bypass the
@@ -324,8 +328,14 @@ are never supported: they can start Vite but leave the host on port 7071
 failing. Node 24 LTS satisfies both the frontend toolchain and the Function
 host.
 
-When the running version is unsupported, the launcher prints the exact upgrade
-command and offers to run it. The prompt defaults to **no**, states that a
+The cross-platform `npm run start:ai` launcher reports an unsupported Node
+version and installation guidance; it does not install Node. Install or select
+an official supported Node build through your approved setup and reopen the
+terminal.
+
+The **Windows PowerShell AI launcher** can instead print the exact upgrade
+command and offer to run it. The following installation prompts and MSI checks
+apply only to that Windows launcher. The prompt defaults to **no**, states that a
 machine-wide install affects every project on the computer, and prefers
 `nvm install 24` when nvm-windows is present because that is reversible and
 needs no elevation.
@@ -544,7 +554,7 @@ does not delete another participant's copy or revoke a shared link.
 | Semantic model comparison | [`src/diff.ts`](../src/diff.ts) |
 | Yjs/Web PubSub and short-lived room tokens | [`src/collab`](../src/collab), [`api/collab-token`](../api/collab-token) |
 | AI request and local configuration | [`src/designAssistant.ts`](../src/designAssistant.ts), [`api/design-assistant`](../api/design-assistant), [`configure-local-ai.mjs`](../scripts/configure-local-ai.mjs) |
-| Launchers and prerequisite checks | [`Start-SecureDesignStudio.ps1`](../Start-SecureDesignStudio.ps1), [`Start-SecureDesignStudio-WithAI.ps1`](../Start-SecureDesignStudio-WithAI.ps1), [`launcher-common.ps1`](../scripts/launcher-common.ps1) |
+| Launchers and prerequisite checks | Cross-platform [`launch.mjs`](../scripts/launch.mjs); Windows [`Start-SecureDesignStudio.ps1`](../Start-SecureDesignStudio.ps1), [`Start-SecureDesignStudio-WithAI.ps1`](../Start-SecureDesignStudio-WithAI.ps1), [`launcher-common.ps1`](../scripts/launcher-common.ps1); POSIX [`start-securedesignstudio.sh`](../start-securedesignstudio.sh), [`start-securedesignstudio-with-ai.sh`](../start-securedesignstudio-with-ai.sh) |
 
 For source changes, follow [contributing and local validation](contributing.md)
 and the scoped [browser checks](../tests/browser/README.md). Keep code validation

@@ -71,7 +71,7 @@ profile preference or URL cannot change it.
 
 | Mode | Started by | Backend pieces | Services available |
 |---|---|---|---|
-| Local | `npm run dev` or `Start-SecureDesignStudio.ps1` | Vite dev server on `http://localhost:5173` only (`strictPort`) | None |
+| Local | `npm start` (all three OSes), platform wrapper, or lower-level `npm run dev` | Vite dev server on `http://localhost:5173` only (`strictPort`) | None |
 | Local AI with Claude or Codex | `npm run dev:ai:local` after provider setup, or the AI launcher with that provider | Vite plus a local `/api/design-assistant` bridge ([`scripts/local-ai-vite.mjs`](../scripts/local-ai-vite.mjs)); CLIs run through [`localProviders.ts`](../api/design-assistant/localProviders.ts) | Design Assistant only |
 | Local AI with Azure | `npm run dev:ai` or the AI launcher with Azure selected | Vite proxies `/api/design-assistant` to local Azure Functions on port 7071; Functions calls the selected Azure deployment | Design Assistant only |
 | Local ADO | `npm run dev:ado` with an explicitly configured SPA registration | Vite plus a localhost ADO relay ([`scripts/local-ado-vite.mjs`](../scripts/local-ado-vite.mjs)) | ADO submission only |
