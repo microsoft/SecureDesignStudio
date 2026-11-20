@@ -108,12 +108,12 @@ function CanvasZoomControls({ onFit, onDeclutter, canDeclutter }: {
       <button
         type="button"
         className="ps-canvas-declutter"
-        aria-label="Declutter diagram"
+        aria-label="Optimize diagram"
         title="Arrange visible items and flows. Shared geometry changes in every scenario. Undo restores the previous layout."
         disabled={!canDeclutter}
         onClick={onDeclutter}
       >
-        Declutter
+        Optimize
       </button>
     </div>
   );
@@ -215,7 +215,7 @@ function InnerDiagram() {
         edges: visibleEdges.map(edge => {
           const labelSize = labels.get(edge.id);
           if (!labelSize?.width || !labelSize.height) {
-            throw new Error("Wait for the diagram to finish rendering, then try Declutter again.");
+            throw new Error("Wait for the diagram to finish rendering, then try Optimize again.");
           }
           return { id: edge.id, source: edge.source, target: edge.target, labelSize };
         }),
