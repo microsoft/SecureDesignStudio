@@ -2453,6 +2453,7 @@ test("usability: inspector keyboard tabs, pinning, and keyboard resizing", async
     await page.keyboard.press("ArrowRight");
     const findings = page.getByRole("tab", { name: /^Findings\b/ });
     assert.equal(await findings.getAttribute("aria-selected"), "true");
+    await until(() => findings.evaluate(element => element === document.activeElement), "Findings tab keyboard focus");
     await page.keyboard.press("ArrowRight");
     const edges = page.getByRole("tab", { name: /^Edges/ });
     assert.equal(await edges.getAttribute("aria-selected"), "true");
