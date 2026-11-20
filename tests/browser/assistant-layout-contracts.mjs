@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { until } from "./harness.mjs";
+import { findingsFixture } from "./findings-contracts.mjs";
 
 async function bounds(locator) {
   return locator.evaluate(element => {
@@ -34,69 +35,31 @@ async function assistantLayout(page, content) {
 
 export async function exerciseAnalysisLayout({ page, observations }, { width, height }) {
   await page.setViewportSize({ width, height });
+  const model = findingsFixture();
+  const note = model.doc.issues.find(issue => issue.origin === "authored-threat");
+  model.doc.issues = Array.from({ length: 10 }, (_, index) => ({
+    ...note, id: `i_layout_${index}`, title: `Synthetic finding ${index + 1}`,
+    description: "STRIDE: Information disclosure\nThe recorded trace reader scope needs owner review.",
+    justification: "The recorded reader group can access the synthetic trace identifiers.",
+  }));
+  await page.locator("#ps-file-open-input").setInputFiles({
+    name: "finding-layout.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
+  });
   await page.getByRole("tab", { name: /^Findings\b/ }).click();
   if (width <= 640) {
     await until(() => page.getByRole("button", { name: "Restore inspector size", exact: true })
       .getAttribute("aria-expanded").then(value => value === "true"), "Narrow Findings inspector finishes expanding");
   }
-  const analysis = page.locator(".ps-assistant-analysis");
-  observations.initialAnalysis = await bounds(analysis);
-  await analysis.waitFor({ state: "visible" });
-  if (width === 1366 && height === 900) {
-    const intro = await page.locator(".ps-assistant-analysis-intro").boundingBox();
-    assert.ok(intro.height < 350, "A short analysis stays content-sized, not stretched to fill the inspector");
-  }
-
-  // Layout-only fixture in the real mounted inspector. Do not enable local AI,
-  // replace request guards, or claim coverage of inference/finding actions.
-  await analysis.evaluate(element => {
-    const findings = document.createElement("div");
-    findings.className = "ps-assistant-findings";
-    findings.setAttribute("aria-live", "polite");
-    const heading = document.createElement("h3");
-    heading.textContent = "AI findings 10";
-    findings.append(heading);
-    for (let index = 1; index <= 10; index += 1) {
-      const article = document.createElement("article");
-      article.className = "ps-assistant-finding";
-      const severity = document.createElement("div");
-      severity.className = "ps-assistant-finding-heading";
-      for (const value of ["high", "Synthetic layout finding"]) {
-        const span = document.createElement("span");
-        span.textContent = value;
-        severity.append(span);
-      }
-      const title = document.createElement("h4");
-      title.textContent = `Synthetic finding ${index}`;
-      const rationale = document.createElement("p");
-      rationale.textContent = "Synthetic scenario evidence for scroll coverage. ".repeat(4);
-      const label = document.createElement("strong");
-      label.textContent = "Recommended action";
-      const recommendation = document.createElement("p");
-      recommendation.textContent = "Review this synthetic boundary and its controls. ".repeat(3);
-      const actions = document.createElement("div");
-      actions.className = "ps-assistant-actions";
-      for (const text of ["Focus", "Create issue", "Create work item"]) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = text;
-        actions.append(button);
-      }
-      article.append(severity, title, rationale, label, recommendation, actions);
-      findings.append(article);
-    }
-    element.append(findings);
-  });
-  const { panel, compact, scroller } = await assistantLayout(page, analysis);
-  observations.compact = compact;
-  observations.analysis = await bounds(analysis);
+  const panel = page.locator("#ps-inspector-panel");
+  const scroller = page.locator(".ps-findings");
+  await scroller.waitFor({ state: "visible" });
   observations.scroller = await bounds(scroller);
-  assert.ok(observations.analysis.clientHeight > 0, "Analysis has usable space");
+  assert.ok(observations.scroller.clientHeight > 0, "Findings has usable space");
   assert.ok(observations.scroller.scrollHeight > observations.scroller.clientHeight,
     "Multiple findings overflow a usable scrolling region");
   assert.equal(observations.scroller.overflowY, "auto", "The active layout owns vertical scrolling");
   assertInside(observations.scroller, await bounds(panel), "The scroller is bounded by the inspector");
-  assert.equal(observations.analysis.overflowY, "visible", "Results do not create a nested scroller");
+  assert.equal(await scroller.locator(".ps-finding-card").count(), 11, "Real saved records, not injected DOM placeholders");
   const fixedHeaders = [
     page.locator(".ps-inspector-header"), page.getByRole("tablist", { name: "Inspector views" }),
     page.locator(".ps-assistant-surface-bar"),
@@ -110,7 +73,7 @@ export async function exerciseAnalysisLayout({ page, observations }, { width, he
   assert.equal((await bounds(panel)).scrollTop, 0, "The outer inspector does not scroll");
 
   await scroller.evaluate(element => { element.scrollTop = 0; });
-  const actions = analysis.locator(".ps-assistant-actions button");
+  const actions = scroller.locator(".ps-finding-card button");
   await actions.first().focus();
   for (let index = 1; index < await actions.count(); index += 1) {
     await page.keyboard.press("Tab");
@@ -126,11 +89,11 @@ export async function exerciseAnalysisLayout({ page, observations }, { width, he
     "Keyboard scrolling preserves the fixed headers");
 
   await page.getByRole("tab", { name: "Properties", exact: true }).click();
-  assert.equal(await analysis.isVisible(), false, "Inactive Assistant is hidden");
-  assert.equal(await page.locator(".ps-assistant-finding:visible").count(), 0);
+  assert.equal(await scroller.isVisible(), false, "Inactive Findings is hidden");
+  assert.equal(await page.locator(".ps-finding-card:visible").count(), 0);
   await page.getByRole("tab", { name: /^Findings\b/ }).click();
-  assert.equal(await analysis.locator(".ps-assistant-finding").count(), 10,
-    "Inspector tab switches keep the analysis subtree mounted");
+  assert.equal(await scroller.locator(".ps-finding-card").count(), 11,
+    "Inspector tab switches keep the Findings subtree mounted");
   assert.equal((await bounds(scroller)).scrollTop, observations.keyboardScrollTop,
     "Inspector tab switches retain analysis scroll position");
   observations.page = await page.evaluate(() => ({
@@ -140,6 +103,7 @@ export async function exerciseAnalysisLayout({ page, observations }, { width, he
 }
 
 async function exerciseChatLayout({ page, observations }) {
+  await page.getByRole("tab", { name: "AI Assistant", exact: true }).click();
   const modes = page.getByRole("tablist", { name: "Design Assistant modes" });
   await modes.getByRole("tab", { name: "Chat", exact: true }).click();
   const conversation = page.locator(".ps-assistant-conversation");
@@ -276,10 +240,10 @@ export function registerAssistantLayoutContracts({ getHarness }) {
             "Canvas zoom remains visible above the expanded inspector");
           assert.equal(await restore.evaluate(element => element === document.activeElement), true,
             "Expansion retains keyboard focus on the toggle");
-          assert.equal(await page.locator(".ps-assistant-finding").count(), 10, "Expansion keeps findings mounted");
-          const last = page.locator(".ps-assistant-actions button").last();
+          assert.equal(await page.locator(".ps-finding-card").count(), 11, "Expansion keeps findings mounted");
+          const last = page.locator(".ps-finding-card button").last();
           await last.focus();
-          const { scroller } = await assistantLayout(page, page.locator(".ps-assistant-analysis"));
+          const scroller = page.locator(".ps-findings");
           assertInside(await bounds(last), await bounds(scroller), "Final finding remains reachable after expansion");
           await restore.focus();
           await page.keyboard.press("Space");

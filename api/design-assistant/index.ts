@@ -87,6 +87,42 @@ function fail(context: Context, status: number, error: string): void {
   context.res = { status, headers: RESPONSE_HEADERS, body: { error } };
 }
 
+const FAILURE_HINTS = {
+  provider: "The AI provider could not complete or validate the request.",
+  "azure-credentials": "Azure authentication failed in the API host. Check that host's Azure sign-in and credentials.",
+  "azure-endpoint": "The API host's Azure endpoint configuration is invalid.",
+  "azure-request": "The Azure model request failed before an HTTP response was received. Check the API host's network, DNS, proxy and certificate trust.",
+  "azure-response": "The Azure model response could not be read.",
+  "response-validation": "The AI response could not be validated.",
+} as const;
+const SAFE_FAILURE_TYPES = new Set([
+  "Error", "TypeError", "SyntaxError", "RangeError", "AbortError", "TimeoutError", "AggregateError",
+  "AuthenticationError", "CredentialUnavailableError", "AggregateAuthenticationError", "AuthenticationRequiredError",
+]);
+const SAFE_FAILURE_CODES = new Set([
+  "ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET",
+  "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ERR_INVALID_URL", "ERR_INVALID_CHAR",
+]);
+
+function failureCode(error: unknown, seen = new Set<object>(), depth = 0): string | undefined {
+  if (!error || typeof error !== "object" || depth > 3 || seen.has(error)) return undefined;
+  seen.add(error);
+  const candidate = error as { code?: unknown; cause?: unknown; errors?: unknown };
+  if (typeof candidate.code === "string" && SAFE_FAILURE_CODES.has(candidate.code)) return candidate.code;
+  const causeCode = failureCode(candidate.cause, seen, depth + 1);
+  if (causeCode) return causeCode;
+  if (Array.isArray(candidate.errors)) {
+    for (const cause of candidate.errors.slice(0, 8)) {
+      const code = failureCode(cause, seen, depth + 1);
+      if (code) return code;
+    }
+  }
+  return undefined;
+}
+
 function parseRequest(req: HttpRequest): AssistantRequest | null {
   let value: unknown = req.body;
   if (typeof value === "string") {
@@ -410,6 +446,7 @@ const httpTrigger: AzureFunction = async function (
     }
   }
   const structured = request.mode === "design" || request.mode === "design-plan";
+  let failureStage: keyof typeof FAILURE_HINTS = "provider";
 
   try {
     const messages = trustedMessages(request, serializedContext);
@@ -452,10 +489,12 @@ const httpTrigger: AzureFunction = async function (
       }
       return;
     }
+    failureStage = "azure-credentials";
     const { DefaultAzureCredential } = await import("@azure/identity");
     const accessToken = await new DefaultAzureCredential().getToken(TOKEN_SCOPE);
     if (!accessToken) throw new Error("Managed identity did not return a token.");
 
+    failureStage = "azure-endpoint";
     const endpoint = normalizeEndpoint(configuredEndpoint!);
     const url =
       `${endpoint}/openai/deployments/${encodeURIComponent(MODEL_DEPLOYMENT_NAME!)}` +
@@ -512,6 +551,7 @@ const httpTrigger: AzureFunction = async function (
         breakdown,
       }));
     }
+    failureStage = "azure-request";
     const aiResponse = await fetch(url, {
       method: "POST",
       headers: {
@@ -522,6 +562,7 @@ const httpTrigger: AzureFunction = async function (
       signal: AbortSignal.timeout(90_000),
     });
 
+    failureStage = "azure-response";
     if (!aiResponse.ok) {
       const detail = await azureErrorDetail(aiResponse);
       context.log.error(
@@ -566,6 +607,7 @@ const httpTrigger: AzureFunction = async function (
       return;
     }
 
+    failureStage = "response-validation";
     const result = validatedResult(request, content, choices, planChoices);
     context.res = {
       status: 200,
@@ -573,13 +615,15 @@ const httpTrigger: AzureFunction = async function (
       body: result,
     };
   } catch (error) {
+    const name = error && typeof error === "object" && "name" in error ? error.name : undefined;
+    const type = typeof name === "string" && SAFE_FAILURE_TYPES.has(name) ? name : "UnknownError";
+    const code = failureCode(error);
     context.log.error(
       "Design Assistant request failed",
-      error instanceof Error ? error.name : "Unknown error",
+      JSON.stringify({ stage: failureStage, type, ...(code ? { code } : {}) }),
     );
-    fail(context, structured ? 502 : 500, structured
-      ? "The AI design could not be completed or validated. No changes were applied; retry with a smaller, more specific prompt."
-      : "Design Assistant could not process the request.");
+    fail(context, structured ? 502 : 500,
+      `${FAILURE_HINTS[failureStage]} No changes were applied. [${failureStage}${code ? `: ${code}` : ""}]`);
   }
 };
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { useUiShell, type InspectorTab } from "../uiShell";
 import { inspectorViewLabels, useReviewNavigation, useReviewNavigationLifecycle } from "../reviewNavigation";
@@ -11,6 +11,8 @@ import { ChangesPanel } from "./ChangesPanel";
 import { DataModal } from "./DataModal";
 import { InspectorSurface } from "./AssistantReviewSurface";
 import { DesignAssistantPanel } from "./DesignAssistantPanel";
+import { FindingsPanel } from "./FindingsPanel";
+import { collectFindings } from "../findingsView";
 import { EdgeDetails } from "./EdgeDetails";
 import { EdgeTable } from "./EdgeTable";
 import { NodeDetails } from "./NodeDetails";
@@ -50,6 +52,7 @@ function clampWidth(width: number): number {
 }
 
 export function SidePanel() {
+  const store = useStore();
   const {
     selection,
     doc,
@@ -60,7 +63,7 @@ export function SidePanel() {
     setAllIssuesViewOpen,
     setDiffViewOpen,
     assistantFindings,
-  } = useStore();
+  } = store;
   const {
     inspectorVisible,
     inspectorWidth,
@@ -86,8 +89,18 @@ export function SidePanel() {
   const tabsRef = useRef(new Map<InspectorTab, HTMLButtonElement | null>());
   tabsRef.current = new Map();
 
+  useLayoutEffect(() => {
+    const tab = tabsRef.current.get(inspectorActiveTab);
+    const strip = tab?.parentElement;
+    if (!tab || !strip?.clientWidth) return;
+    const target = tab.getBoundingClientRect();
+    const bounds = strip.getBoundingClientRect();
+    if (target.left < bounds.left) strip.scrollLeft += target.left - bounds.left;
+    else if (target.right > bounds.right) strip.scrollLeft += target.right - bounds.right;
+  }, [inspectorActiveTab, inspectorVisible, inspectorPresentation]);
+
   useEffect(() => {
-    if ((inspectorActiveTab === "assistant" || returnPoint) && window.innerWidth <= 640) setInspectorExpanded(true);
+    if ((inspectorActiveTab === "assistant" || inspectorActiveTab === "findings" || returnPoint) && window.innerWidth <= 640) setInspectorExpanded(true);
   }, [inspectorActiveTab, returnPoint]);
 
   const selectionKey = selection
@@ -180,7 +193,7 @@ export function SidePanel() {
             tabsRef.current.get(inspectorActiveTab)?.focus({ preventScroll: true }),
           );
         }
-      } else if (inspectorActiveTab === "assistant" || returnPoint) {
+      } else if (inspectorActiveTab === "assistant" || inspectorActiveTab === "findings" || returnPoint) {
         setInspectorExpanded(true);
       }
     };
@@ -269,8 +282,11 @@ export function SidePanel() {
     return activeScenario?.name ?? "Show all scenarios";
   }, [selection, doc.nodes, doc.edges, activeScenario]);
 
+  const findingsCount = useMemo(() => collectFindings(store).length,
+    [doc, store.documentSessionId, assistantFindings, store.assistantAnalysis, store.assistantFindingLinks]);
   const tabs: { id: InspectorTab; label: string; count?: number }[] = [
     { id: "properties", label: "Properties" },
+    { id: "findings", label: "Findings", count: findingsCount },
     { id: "edges", label: "Edges", count: activeScenario?.edgeIds.length ?? 0 },
     { id: "issues", label: "Issues", count: doc.issues.length },
     { id: "comments", label: "Comments", count: doc.comments.length },
@@ -286,7 +302,7 @@ export function SidePanel() {
       : []),
     { id: "data", label: "Data", count: doc.data.length },
     { id: "work", label: "Work", count: doc.workItems.length },
-    { id: "assistant", label: "Findings", count: assistantFindings.length },
+    { id: "assistant", label: "AI Assistant" },
   ];
 
   const selectTab = (tab: InspectorTab, focus = false) => {
@@ -341,7 +357,7 @@ export function SidePanel() {
 
   return (
     <InspectorSurface dockWidth={clampWidth(inspectorWidth)}
-      className={`${inspectorExpanded ? "ps-inspector-expanded" : ""}${inspectorActiveTab === "assistant" ? " ps-inspector-assistant" : ""}`}>
+      className={`${inspectorExpanded ? "ps-inspector-expanded" : ""}${inspectorActiveTab === "assistant" ? " ps-inspector-assistant" : ""}${inspectorActiveTab === "findings" ? " ps-inspector-findings" : ""}`}>
       {inspectorPresentation === "docked" && <div
         className="ps-side-resizer"
         onPointerDown={onResizeStart}
@@ -375,16 +391,16 @@ export function SidePanel() {
                   <span>✦</span>
                   <span>✦</span>
                 </span>
-                Design Assistant
+                AI Assistant
               </>
             ) : (
-              "Inspector"
+              inspectorActiveTab === "findings" ? "Findings" : "Inspector"
             )}
           </h2>
           <p>
             {inspectorActiveTab === "assistant"
               ? "Security and privacy model review"
-              : contextLabel}
+              : inspectorActiveTab === "findings" ? "STRIDE evidence. One list, one detail view." : contextLabel}
           </p>
         </div>
         {inspectorPresentation === "docked" && <button
@@ -444,6 +460,7 @@ export function SidePanel() {
             id={`ps-inspector-tab-${tab.id}`}
             aria-selected={inspectorActiveTab === tab.id}
             aria-controls={`ps-inspector-panel-${tab.id}`}
+            aria-label={typeof tab.count === "number" ? `${tab.label} (${tab.count})` : tab.label}
             tabIndex={inspectorActiveTab === tab.id ? 0 : -1}
             onClick={() => selectTab(tab.id)}
             onKeyDown={(event) => onTabKeyDown(event, index)}
@@ -461,7 +478,7 @@ export function SidePanel() {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
               <path d="M7 3 2 8l5 5M2 8h12" />
             </svg>
-            Back to {inspectorViewLabels[returnPoint.tab]}
+            Back to {returnPoint.tab === "findings" && returnPoint.findingDetail ? "finding" : inspectorViewLabels[returnPoint.tab]}
           </button>
           <button type="button" className="ps-review-return-dismiss" aria-label="Dismiss return navigation"
             title="Stay here and dismiss return navigation" onClick={dismiss}>
@@ -477,7 +494,7 @@ export function SidePanel() {
         className={`ps-inspector-panel${
           inspectorActiveTab === "assistant"
             ? " ps-inspector-panel-assistant-active"
-            : ""
+            : inspectorActiveTab === "findings" ? " ps-inspector-panel-findings-active" : ""
         }`}
       >
         <section
@@ -517,6 +534,15 @@ export function SidePanel() {
           visible={inspectorVisible && inspectorActiveTab === "assistant"}
           inspectorClosed={!inspectorVisible}
         /></div>
+        </section>
+        <section
+          id="ps-inspector-panel-findings"
+          role="tabpanel"
+          tabIndex={-1}
+          aria-labelledby="ps-inspector-tab-findings"
+          hidden={inspectorActiveTab !== "findings"}
+        >
+          <FindingsPanel />
         </section>
         <section
           id="ps-inspector-panel-comments"

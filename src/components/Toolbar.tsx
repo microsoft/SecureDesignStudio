@@ -109,6 +109,7 @@ type CommandId =
   | "model.data"
   | "model.work"
   | "review.analyze"
+  | "review.findings"
   | "assistant.open"
   | "review.issues"
   | "review.comments"
@@ -197,6 +198,7 @@ export function Toolbar() {
     documentFileName,
     setDocumentFileName,
     endReviewNavigation,
+    setFindingDetail,
   } = useUiShell();
   const selectScenario = (id: string | null) => {
     endReviewNavigation();
@@ -585,7 +587,6 @@ export function Toolbar() {
     }
     setOpenMenu(null);
     closeCommandMenu();
-    // Surface the (potentially updated) issues list immediately.
     setAllIssuesViewOpen(true);
     openInspector("issues", commandTriggerRef.current);
   };
@@ -1762,6 +1763,11 @@ export function Toolbar() {
         restoreFocus = false;
         onAnalyze();
         break;
+      case "review.findings":
+        restoreFocus = false;
+        setFindingDetail(null);
+        showInspectorTab("findings");
+        break;
       case "assistant.open":
         restoreFocus = false;
         showInspectorTab("assistant");
@@ -2100,8 +2106,11 @@ export function Toolbar() {
                 <button role="menuitem" onClick={() => executeCommand("review.analyze")}>
                   Analyze
                 </button>
+                <button role="menuitem" onClick={() => executeCommand("review.findings")}>
+                  Findings
+                </button>
                 <button role="menuitem" onClick={() => executeCommand("assistant.open")}>
-                  Design Assistant
+                  AI Assistant
                 </button>
                 <div className="ps-command-menu-separator" />
                 <button role="menuitem" onClick={() => executeCommand("review.issues")}>
@@ -2174,6 +2183,9 @@ export function Toolbar() {
                 <div className="ps-command-menu-label">Open panel</div>
                 <button role="menuitem" onClick={() => executeCommand("view.properties")}>
                   Properties
+                </button>
+                <button role="menuitem" onClick={() => executeCommand("review.findings")}>
+                  Findings
                 </button>
                 <button role="menuitem" onClick={() => executeCommand("view.edges")}>
                   Edge list
@@ -2486,11 +2498,11 @@ export function Toolbar() {
             type="button"
             onClick={(event) => {
               commandTriggerRef.current = event.currentTarget;
-              executeCommand("review.issues");
+              executeCommand("review.findings");
             }}
-            title="Open analyzer and manually reported issues"
+            title="Review findings from all sources with STRIDE evidence"
           >
-            Issues <span className="ps-command-quick-count">{doc.issues.length}</span>
+            Findings
           </button>
           <button
             type="button"
@@ -2525,13 +2537,13 @@ export function Toolbar() {
               commandTriggerRef.current = event.currentTarget;
               executeCommand("assistant.open");
             }}
-            title="Open Design Assistant"
+            title="Open AI Assistant"
           >
             <span className="ps-assistant-mark" aria-hidden="true">
               <span>✦</span>
               <span>✦</span>
             </span>
-            Design Assistant
+            AI Assistant
           </button>
         </div>
 

@@ -20,6 +20,7 @@ import {
 } from "react";
 import type { ChangeItem, ChangeTarget } from "./diff";
 import type { AssistantAnalysisSnapshot, AssistantFinding } from "./designAssistant";
+import type { AssistantFindingLinks } from "./findingsView";
 import { propagateScenarioEdgeData } from "./dataPropagation";
 import { applyDesignerResult, buildDesignerContext, buildDesignPlanContext, designerDocumentKey, describeDesignerChanges, type DesignRequestSnapshot } from "./threatModelDesigner";
 import { createAutosaveSession, loadAutosaveRaw, saveAutosave } from "./autosave";
@@ -636,6 +637,8 @@ interface StoreApi {
   // Saved AI review; the session ID on its view is local navigation context only.
   assistantFindings: PsFinding[];
   assistantAnalysis: AssistantAnalysisSnapshot | null;
+  assistantFindingLinks: AssistantFindingLinks | null;
+  setAssistantFindingLinks: Dispatch<SetStateAction<AssistantFindingLinks | null>>;
   saveAssistantReview: (findings: AssistantFinding[], analysis: PsFindingAnalysis, source: PsDocument) => void;
   updateFinding: (id: string, patch: Partial<Pick<PsFinding, "status" | "accepted" | "workItemType" | "weaknessType">>) => void;
   deleteFinding: (id: string) => void;
@@ -1355,6 +1358,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     doc.findingAnalysis?.createdAt, doc.findingAnalysis?.answer, documentSessionId]);
   const acceptedFindingIds = useMemo(() =>
     new Set(assistantFindings.filter(finding => finding.accepted).map(finding => finding.id)), [assistantFindings]);
+  const [assistantFindingLinks, setAssistantFindingLinks] = useState<AssistantFindingLinks | null>(null);
   const [allCommentsViewOpen, setAllCommentsViewOpenRaw] = useState(false);
   const [allIssuesViewOpen, setAllIssuesViewOpenRaw] = useState(false);
   const [diffViewOpen, setDiffViewOpenRaw] = useState(false);
@@ -1727,6 +1731,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     snapshot();
     setDoc(emptyDocument());
     setDocumentSessionId(current => current + 1);
+    setAssistantFindingLinks(null);
     setDocumentRecoveryError(null);
     setActiveScenarioId(null);
     setSelection(null);
@@ -4292,6 +4297,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       snapshot();
       setDoc(newDoc);
       setDocumentSessionId(current => current + 1);
+      setAssistantFindingLinks(null);
       setDocumentRecoveryError(null);
 
       let nextActive: string | null = null;
@@ -4685,6 +4691,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateFinding,
     deleteFinding,
     acceptedFindingIds,
+    assistantFindingLinks,
+    setAssistantFindingLinks,
     allCommentsViewOpen,
     setAllCommentsViewOpen,
     allIssuesViewOpen,

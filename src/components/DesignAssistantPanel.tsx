@@ -1,11 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SERVICES } from "../services";
 import { useStore } from "../store";
 import { referencedCatalogDefinitions } from "../catalogDefinitions";
 import { buildDfdReviewContext } from "../dfdReviewContext";
 import { formatGuidanceReferences } from "../aiDesignGuidance";
-import { workItemFromFinding } from "../workItems";
-import { WORK_ITEM_TYPES, isWorkItemType } from "../../shared/adoContract";
 import { assertAiRequestBudget } from "../../shared/aiDesignGuidance";
 import {
   askDesignAssistant,
@@ -16,7 +14,6 @@ import {
 } from "../designAssistant";
 import { useUiShell } from "../uiShell";
 import { reviewElementExists, useReviewNavigation, type ReviewSource } from "../reviewNavigation";
-import type { PsFinding } from "../types";
 import { useAiProvider } from "../aiProvider";
 import { AiProviderSelector } from "./AiProviderSelector";
 import {
@@ -119,24 +116,19 @@ export function DesignAssistantPanel({
     classificationDefinitions,
     nodeTypeCatalog,
     selection,
-    addIssue,
     createWorkItem,
     updateWorkItem,
     assistantFindings: findings,
-    acceptedFindingIds,
     assistantAnalysis,
     saveAssistantReview,
-    updateFinding,
-    deleteFinding,
+    setAssistantFindingLinks,
   } = useStore();
-  const { openInspector, endReviewNavigation } = useUiShell();
-  const { visitElement, visitRecord } = useReviewNavigation();
-  const classificationId = useId();
+  const { openInspector, endReviewNavigation, setFindingDetail } = useUiShell();
+  const { visitElement } = useReviewNavigation();
   const simulation = useBreachSimulation();
   const [mode, setMode] = useState<AssistantMode>("analyze");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -154,7 +146,7 @@ export function DesignAssistantPanel({
     setBusy(false);
     setMessages([]);
     setQuestion("");
-    setSelectedFindingId(null);
+    setAssistantFindingLinks(null);
     modeScroll.current = { analyze: 0, chat: 0 };
     conversationScroll.current = 0;
     simulation.reset();
@@ -175,8 +167,8 @@ export function DesignAssistantPanel({
     if (providerRef.current === aiProvider.provider) return;
     providerRef.current = aiProvider.provider;
     endReviewNavigation("assistant", "The AI provider changed. Its previous return context is no longer available.");
+    endReviewNavigation("findings", "The AI provider changed. Its previous return context is no longer available.");
     setMessages([]);
-    setSelectedFindingId(null);
     simulation.reset();
     setError(null);
   }, [aiProvider.provider]);
@@ -223,80 +215,12 @@ export function DesignAssistantPanel({
 
   const referenceExists = (reference: AssistantReference) => reviewElementExists(doc, reference);
 
-  useEffect(() => {
-    if (!selectedFindingId) return;
-    const finding = findings.find((item) => item.id === selectedFindingId);
-    if (!selection || selection.kind === "waypoint" || !finding?.references.some((reference) =>
-      reference.kind === selection.kind && reference.id === selection.id && referenceExists(reference))) {
-      setSelectedFindingId(null);
-    }
-  }, [selection, findings, selectedFindingId, doc.nodes, doc.edges, doc.boundaries]);
-
   const focusReference = (reference: AssistantReference, trigger: HTMLButtonElement, source?: ReviewSource) => {
     if (!referenceExists(reference)) {
       setError("This referenced element is no longer in the model. Run AI Analysis again to refresh the findings.");
       return;
     }
-    if (visitElement(reference, { source, trigger })) {
-      setSelectedFindingId(source?.kind === "finding" ? source.id : null);
-    }
-  };
-
-  const acceptAsIssue = (finding: PsFinding, trigger: HTMLButtonElement) => {
-    const target = finding.issueReference;
-    if (!target || (target.kind !== "node" && target.kind !== "edge") || !referenceExists(target)) {
-      setError("The original issue target is no longer available. Run AI Analysis again before creating an issue.");
-      return;
-    }
-    if (assistantAnalysis && !doc.scenarios.some(scenario => scenario.id === assistantAnalysis.scenarioId)) {
-      setError("The analyzed scenario no longer exists. Run AI Analysis again before creating an issue.");
-      return;
-    }
-    const created = addIssue(
-      target.kind,
-      target.id,
-      assistantAnalysis ? [assistantAnalysis.scenarioId] : activeScenario ? [activeScenario.id] : [],
-      finding.title,
-      `${finding.rationale}\n\nRecommended action: ${finding.recommendation}${formatGuidanceReferences(finding.guidanceReferences)}`,
-      undefined,
-      finding.guidanceReferences,
-    );
-    updateFinding(finding.id, { accepted: true });
-    visitRecord({ kind: "issue", id: created.id }, trigger, { kind: "finding", id: finding.id });
-  };
-
-  const acceptAsWorkItem = (finding: PsFinding, trigger: HTMLButtonElement) => {
-    const created = createWorkItem(workItemFromFinding(finding, assistantAnalysis));
-    updateFinding(finding.id, { accepted: true });
-    visitRecord({ kind: "work", id: created.id }, trigger, { kind: "finding", id: finding.id });
-  };
-
-  const changeFinding = (id: string, patch: Parameters<typeof updateFinding>[1]) => {
-    try {
-      updateFinding(id, patch);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to update finding.");
-    }
-  };
-
-  const removeFinding = (finding: PsFinding, trigger: HTMLButtonElement) => {
-    const owner = trigger.ownerDocument.defaultView ?? window;
-    if (!owner.confirm("Delete this finding? Issues and work items already created from it will be kept.")) return;
-    try {
-      const index = findings.findIndex(item => item.id === finding.id);
-      const adjacent = findings[index + 1] ?? findings[index - 1];
-      deleteFinding(finding.id);
-      setError(null);
-      owner.requestAnimationFrame(() => {
-        const root = analysisRoot.current;
-        const next = Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-finding-status]") ?? [])
-          .find(button => button.dataset.findingStatus === adjacent?.id);
-        (next ?? root?.querySelector<HTMLElement>("[data-findings-heading]"))?.focus();
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to delete finding.");
-    }
+    visitElement(reference, { source, trigger });
   };
 
   const runRequest = async (requestMode: AssistantMode, prompt: string) => {
@@ -342,7 +266,7 @@ export function DesignAssistantPanel({
           createdAt: Date.now(), answer: response.answer,
         }, doc);
         endReviewNavigation("assistant", "The AI review changed. Its previous return context is no longer available.");
-        setSelectedFindingId(null);
+        setAssistantFindingLinks(null);
       }
       return response;
     } catch (requestError) {
@@ -417,11 +341,10 @@ export function DesignAssistantPanel({
     <div ref={analysisRoot} className={`ps-assistant${mode === "analyze" ? " is-analysis" : ""}`}
       data-assistant-scroll="panel" tabIndex={0}
       onScroll={event => { modeScroll.current[mode] = event.currentTarget.scrollTop; }}>
-      {mode === "analyze" && findings.length > 0 && <button type="button" className="ps-assistant-jump" onClick={() => {
-        const root = analysisRoot.current;
-        const results = root?.querySelector<HTMLElement>(".ps-assistant-findings");
-        if (root && results) root.scrollTop += results.getBoundingClientRect().top - root.getBoundingClientRect().top;
-      }}>Go to AI findings ({findings.length})</button>}
+      {mode === "analyze" && assistantAnalysis && <button type="button" className="ps-assistant-jump" onClick={event => {
+        setFindingDetail(null);
+        openInspector("findings", event.currentTarget);
+      }}>Review findings ({findings.length})</button>}
       <AiProviderSelector />
       <div className="ps-assistant-mode" role="tablist" aria-label="Design Assistant modes">
         {(["analyze", "chat"] as const).map((candidate) => (
@@ -675,119 +598,6 @@ export function DesignAssistantPanel({
                 </div>
               )}
             </section>
-          )}
-          {(assistantAnalysis || doc.findings !== undefined) && (
-            <div className="ps-assistant-findings" aria-live="polite">
-              <h3 data-findings-heading tabIndex={-1}>AI findings <span>{findings.length}</span></h3>
-              {findings.length === 0 && <p className="ps-empty">No saved AI findings.</p>}
-              {findings.map((finding, index) => {
-                const originalTarget = finding.focusReference;
-                const target = originalTarget && referenceExists(originalTarget) ? originalTarget : undefined;
-                const issueTarget = finding.issueReference;
-                const selected = finding.id === selectedFindingId;
-                return (
-                  <article key={finding.id} data-finding-id={finding.id} data-review-kind="finding" data-review-id={finding.id}
-                    className={`ps-assistant-finding${selected ? " ps-assistant-finding-selected" : ""}`}>
-                    <span className={`ps-comment-status ps-comment-status-${finding.status.toLowerCase()}`}>
-                      {finding.status}
-                    </span>
-                    <button
-                      type="button"
-                      className="ps-assistant-finding-target"
-                      aria-label={`Select finding: ${finding.title}`}
-                      aria-pressed={selected}
-                      disabled={!target}
-                      onClick={event => target && focusReference(target, event.currentTarget, { kind: "finding", id: finding.id })}
-                      title={target ? `Focus ${target.label} (${target.kind}: ${target.id})` : "No available diagram reference"}
-                    >
-                      <span className="ps-assistant-finding-heading">
-                        <span className={`is-${finding.severity}`}>{finding.severity}</span>
-                        <span>{finding.category}</span>
-                      </span>
-                      <span className="ps-assistant-finding-title">{finding.title}</span>
-                    </button>
-                    <p>{finding.rationale}</p>
-                    <strong>Recommended action</strong>
-                    <p>{finding.recommendation}</p>
-                    <details className="ps-assistant-work-classification">
-                      <summary>Work item classification</summary>
-                      <fieldset disabled={busy || acceptedFindingIds.has(finding.id)}>
-                        <legend>Individual finding classification</legend>
-                        <div className="ps-work-field">
-                          <label htmlFor={`${classificationId}-type-${index}`}>Work item type</label>
-                          <select id={`${classificationId}-type-${index}`} value={finding.workItemType ?? ""}
-                            onChange={event => {
-                              const type = event.target.value;
-                              if (type === "" || isWorkItemType(type)) {
-                                changeFinding(finding.id, { workItemType: type || undefined });
-                              }
-                            }}>
-                            <option value="">Not set</option>
-                            {WORK_ITEM_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-                          </select>
-                        </div>
-                        <div className="ps-work-field">
-                          <label htmlFor={`${classificationId}-weakness-${index}`}>Weakness Type</label>
-                          <input id={`${classificationId}-weakness-${index}`} type="text" value={finding.weaknessType ?? ""} placeholder="Optional (blank allowed)"
-                            onChange={event => {
-                              const weaknessType = event.target.value || undefined;
-                              changeFinding(finding.id, { weaknessType });
-                            }} />
-                        </div>
-                        <p>These choices copy into the new Work item. Type and Severity are required for Bugs and Tasks; Weakness Type is optional and may be blank. You can finish classification in Work after creation.</p>
-                      </fieldset>
-                    </details>
-                    {!target && <p className="ps-assistant-reference-unavailable">No available diagram reference for this finding.</p>}
-                    {finding.references.length > 1 && <div className="ps-assistant-actions" aria-label="Exact diagram references">
-                      {finding.references.map(reference => (
-                        <button key={`${reference.kind}:${reference.id}`} type="button"
-                          data-reference-kind={reference.kind} data-reference-id={reference.id}
-                          disabled={!referenceExists(reference)}
-                          title={referenceExists(reference) ? `${reference.kind}: ${reference.id}` : "Referenced element is no longer in the model"}
-                          onClick={event => focusReference(reference, event.currentTarget, { kind: "finding", id: finding.id })}>
-                          Focus {reference.label} ({reference.kind}: {reference.id})
-                        </button>
-                      ))}
-                    </div>}
-                    <div className="ps-assistant-actions">
-                      <button type="button" data-finding-status={finding.id} disabled={busy}
-                        onClick={() => changeFinding(finding.id, { status: finding.status === "Active" ? "Resolved" : "Active" })}>
-                        {finding.status === "Active" ? "Resolve" : "Reopen"}
-                      </button>
-                      <button type="button" className="ps-danger" disabled={busy}
-                        onClick={event => removeFinding(finding, event.currentTarget)}>
-                        Delete
-                      </button>
-                      {target && (
-                        <button
-                          type="button"
-                          onClick={event => focusReference(target, event.currentTarget, { kind: "finding", id: finding.id })}
-                        >
-                          Focus
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={
-                          acceptedFindingIds.has(finding.id) ||
-                          !issueTarget || !referenceExists(issueTarget)
-                        }
-                        onClick={event => acceptAsIssue(finding, event.currentTarget)}
-                      >
-                        Create issue
-                      </button>
-                      <button
-                        type="button"
-                        disabled={acceptedFindingIds.has(finding.id)}
-                        onClick={event => acceptAsWorkItem(finding, event.currentTarget)}
-                      >
-                        Create work item
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
           )}
         </div>
       )}

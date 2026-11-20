@@ -130,7 +130,11 @@ function harness(env = {}, options = {}) {
     const require = name => {
       if (name.startsWith(".")) return load(resolve(dirname(file), `${name}.ts`));
       if (name === "@azure/identity") return { DefaultAzureCredential: class {
-        async getToken() { tokens++; return { token: "synthetic-token" }; }
+        async getToken() {
+          tokens++;
+          if (options.credentialError) throw options.credentialError;
+          return { token: "synthetic-token" };
+        }
       } };
       if (name === "node:child_process") return { spawn: fakeSpawn };
       if (name === "node:fs") return { promises: fakeFs };
@@ -140,6 +144,7 @@ function harness(env = {}, options = {}) {
     };
     const fetch = async (url, request) => {
       modelCalls.push({ url, ...request });
+      if (options.azureFetchError) throw options.azureFetchError;
       return options.azureResponse ?? { ok: true, json: async () => ({ choices: [{ finish_reason: "stop",
         message: { content: JSON.stringify(result) } }], usage: {
         prompt_tokens: 16, completion_tokens: 1, total_tokens: 17,
@@ -195,6 +200,49 @@ test("providers: hosted remains Azure-only with no CLI execution and no fallback
   }
   assert.equal(h.calls.length, 0);
   assert.equal(h.modelCalls.length, 1);
+});
+
+test("providers: Azure failures identify their stage and safe cause without leaking request or credential details", async () => {
+  const azure = { AZURE_OPENAI_ENDPOINT: "https://synthetic.invalid", MODEL_DEPLOYMENT_NAME: "synthetic" };
+  const privateText = "PRIVATE_PROMPT_TOKEN_ENDPOINT_CONTENT";
+  const request = { mode: "analyze", question: privateText, context: {} };
+  for (const [options, stage, code] of [
+    [{ credentialError: Object.assign(new Error(privateText), { name: "CredentialUnavailableError" }) }, "azure-credentials", undefined],
+    [{ azureFetchError: new TypeError(privateText, { cause: Object.assign(new Error(privateText), { code: "ECONNRESET" }) }) }, "azure-request", "ECONNRESET"],
+    [{ azureFetchError: new TypeError(privateText, { cause: new AggregateError([
+      Object.assign(new Error(privateText), { code: "ECONNREFUSED" }),
+      Object.assign(new Error(privateText), { code: "ECONNREFUSED" }),
+    ], privateText) }) }, "azure-request", "ECONNREFUSED"],
+    [{ azureResponse: { ok: true, json: async () => { throw new SyntaxError(privateText); } } }, "azure-response", undefined],
+    [{ azureResponse: { ok: true, json: async () => ({ choices: [{ message: { content: "null" } }] }) } }, "response-validation", undefined],
+  ]) {
+    const h = harness(azure, options);
+    const response = await h.invoke(request);
+    assert.equal(response.status, 500);
+    assert.match(response.body.error, new RegExp(stage));
+    const failure = h.logs.find(([label]) => label === "Design Assistant request failed");
+    const diagnostic = JSON.parse(failure[1]);
+    assert.equal(diagnostic.stage, stage);
+    assert.equal(diagnostic.code, code);
+    assert.doesNotMatch(JSON.stringify({ logs: h.logs, response }), /PRIVATE_|synthetic-token|synthetic\.invalid/);
+    assert.equal(h.modelCalls.length, stage === "azure-credentials" ? 0 : 1);
+    assert.equal(h.calls.length, 0, "A failed Azure request never falls back to another provider");
+  }
+});
+
+test("providers: unknown and cyclic error causes are bounded and never echoed", async () => {
+  const cause = { code: "PRIVATE_SECRET_CODE", message: "PRIVATE_ERROR_DETAILS" };
+  cause.cause = cause;
+  const h = harness({ AZURE_OPENAI_ENDPOINT: "https://synthetic.invalid", MODEL_DEPLOYMENT_NAME: "synthetic" }, {
+    azureFetchError: Object.assign(new TypeError("PRIVATE_FETCH_DETAILS"), { cause, name: "PRIVATE_ERROR_TYPE" }),
+  });
+  const response = await h.invoke({ mode: "chat", question: "PRIVATE_PROMPT", context: {} });
+  assert.equal(response.status, 500);
+  assert.match(response.body.error, /azure-request/);
+  const diagnostic = JSON.parse(h.logs.find(([label]) => label === "Design Assistant request failed")[1]);
+  assert.equal(diagnostic.code, undefined);
+  assert.equal(diagnostic.type, "UnknownError");
+  assert.doesNotMatch(JSON.stringify({ logs: h.logs, response }), /PRIVATE_|synthetic-token|synthetic\.invalid/);
 });
 
 test("providers: Azure debug logs request size without prompt text and exact successful usage", async () => {

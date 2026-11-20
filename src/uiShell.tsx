@@ -12,6 +12,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { ReviewNavigationState } from "./reviewNavigation";
+import type { FindingIdentity } from "./findingsView";
 
 export type InspectorPresentation = "docked" | "floating" | "window";
 export type InspectorTab =
@@ -19,6 +20,7 @@ export type InspectorTab =
   | "edges"
   | "issues"
   | "assistant"
+  | "findings"
   | "comments"
   | "deviations"
   | "changes"
@@ -52,6 +54,8 @@ interface UiShellApi extends UiPreferences {
   reviewNavigation: ReviewNavigationState;
   setReviewNavigation: Dispatch<SetStateAction<ReviewNavigationState>>;
   endReviewNavigation: (source?: InspectorTab, notice?: string) => void;
+  findingDetail: FindingIdentity | null;
+  setFindingDetail: (identity: FindingIdentity | null) => void;
   setDarkTheme: (darkTheme: boolean) => void;
   setAutosaveIntervalMs: (autosaveIntervalMs: number) => void;
   setScopeColor: (field: "outOfScopeColor" | "externalInteractorColor", color: string) => void;
@@ -78,6 +82,7 @@ const INSPECTOR_TABS = new Set<InspectorTab>([
   "edges",
   "issues",
   "assistant",
+  "findings",
   "comments",
   "deviations",
   "changes",
@@ -160,6 +165,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
   const [reviewNavigation, setReviewNavigation] = useState<ReviewNavigationState>({
     returns: [], preview: null, request: null, notice: null, revision: 0,
   });
+  const [findingDetail, setFindingDetail] = useState<FindingIdentity | null>(null);
   const endReviewNavigation = useCallback((source?: InspectorTab, notice?: string) => {
     ++focusTicketRef.current;
     setReviewNavigation(current => {
@@ -217,6 +223,8 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       reviewNavigation,
       setReviewNavigation,
       endReviewNavigation,
+      findingDetail,
+      setFindingDetail,
       focusInspectorTab,
       documentFileName,
       setDocumentFileName,
@@ -290,7 +298,7 @@ export function UiShellProvider({ children }: { children: ReactNode }) {
       requestFitView: () => setFitViewRequest((current) => current + 1),
       reopenFocusRequest,
     };
-  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation, reviewNavigation, endReviewNavigation]);
+  }, [preferences, documentFileName, fitViewRequest, reopenFocusRequest, inspectorPresentation, reviewNavigation, findingDetail, endReviewNavigation]);
 
   return (
     <UiShellContext.Provider value={value}>{children}</UiShellContext.Provider>
