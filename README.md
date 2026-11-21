@@ -7,9 +7,9 @@ reviews on **Windows, macOS, and Linux**. Draw service interactions, describe
 authentication and data handling, and record review findings in one editable
 model. No Azure account or AI service is needed for local modeling and analysis.
 
-![SecureDesignStudio showing a synthetic Support web to Support API flow on the canvas, with its title, description, and security properties in the inspector.](docs/images/support-case-review.png)
+![SecureDesignStudio showing a web app to Support API flow on the canvas, with its title, description, and security properties in the inspector.](docs/images/support-case-review.png)
 
-*A synthetic support-case starter in the public app. Blank security fields are
+*A support-case starter in the public app. Blank security fields are
 questions to review, not verified controls.*
 
 ## Get started
@@ -18,7 +18,7 @@ questions to review, not verified controls.*
 
 - [Git](https://git-scm.com/downloads) to download the public repository.
 - [Node.js 24 LTS](https://nodejs.org/en/download), including **npm**, to run it.
-- A current **Microsoft Edge or Google Chrome** browser.
+- A current **Browser**.
 
 Use your organization's approved installation process. Reopen your terminal
 after installing, then check `git --version`, `node --version`, and
@@ -36,7 +36,7 @@ cd SecureDesignStudio
 npm start
 ```
 
-In Windows PowerShell, the last command can be **`npm.cmd start`**.
+In a Shell, or Windows PowerShell, the last command can be **`npm.cmd start`**.
 The launcher checks prerequisites and port 5173, installs missing or incompatible
 direct dependencies, and starts the app. The first dependency installation needs
 internet access and may take a few minutes; stop and read any reported error.
@@ -47,7 +47,7 @@ For later sessions, return to the `SecureDesignStudio` folder and run `npm start
 
 ### 3. Explore a sample and save your first model
 
-1. Download the synthetic [customer profile model](samples/customer-profile-service.tma)
+1. Download the sample [customer profile model](samples/customer-profile-service.tma)
    using GitHub's **Download raw file** button, or use the copy already in your
    cloned repository's `samples` folder.
 2. In **Create your first scenario**, choose **Open model (.tma)...** and select
@@ -62,7 +62,7 @@ For later sessions, return to the `SecureDesignStudio` folder and run `npm start
    copy. Your browser may ask for a location or download the file to Downloads.
    Reopen it with **File > Open**.
 
-**Autosave is recovery, not backup.** Save `.tma` files regularly and before
+**NOTE - Autosave is built in for recovery, not backup.** Save `.tma` files regularly and before
 replacing, importing, or sharing a model. Keep real personal information and
 secrets out of practice models, and review contents before sharing.
 
@@ -90,9 +90,8 @@ or certify security/privacy compliance.
 
 ## Optional AI and services
 
-The **Design Assistant** is opt-in and separate from local **Analyze**.
-Bring your own authorized Azure OpenAI/Foundry deployment, Claude Code, or
-Codex CLI subscription. Setup, data handling, and possible provider costs are
+The **Design Assistant** is opt-in and separate from local **Analyze**. The Design Assistant will run your model thru a bring your own authorized Azure OpenAI/Foundry deployment, Claude Code, or
+Codex CLI subscription model. This provides dynamic **AI analysis** and insight into possible risks. **Find Attack Path** will simulate a attack against the service based on known vulnerabilities. And **Chat** allows you to discuss security/privacy/compliance issues associated with your designs setup, data handling. Detailed set up and use are
 covered in [Bring your own AI](docs/bring-your-own-ai.md).
 
 Normal `npm start` enables **neither AI nor collaboration**. Collaboration
