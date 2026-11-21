@@ -1,5 +1,7 @@
 # Advanced configuration and reference
 
+[Home](../README.md) → [User guide](user-guide.md) → Advanced reference
+
 Start with the [user guide](user-guide.md) for the step-by-step support-case
 exercise. Use this document when you need to customize the app, understand a
 review setting, import or export files, or troubleshoot a problem.
@@ -739,6 +741,11 @@ See [model concepts](user-guide.md#1-what-securedesignstudio-is),
 
 ## Runtime modes
 
+For normal installation and startup, use the
+[user-guide setup section](user-guide.md#2-how-to-install-and-run).
+For optional provider setup, use [Bring your own AI](bring-your-own-ai.md).
+The following table is a configuration reference, not another setup checklist.
+
 | Mode | Local processes and network behavior |
 |---|---|
 | `npm start` (`npm run dev`) | Vite only, strict `http://localhost:5173/`. No Azure credentials, API, room persistence, or model-service requests. Room/key fragments are ignored and left untouched. |
@@ -777,7 +784,7 @@ $env:SDS_SERVICE_CONFIG = 'examples\service-configuration\example.json'
 npm run build
 ```
 
-The example uses reserved synthetic domains; replace them in your own reviewed
+The example uses reserved example domains; replace them in your own reviewed
 file. Its schema is:
 
 ```json
@@ -1043,14 +1050,10 @@ and its model deployment name. If you are using someone else's deployment,
 obtain those from its owner. Basic use of SecureDesignStudio does not require
 creating Azure resources.
 
-For Azure, install Core Tools once if `func --version` does not work, then open a new
-PowerShell window so the PATH update applies:
-
-```powershell
-winget install --id Microsoft.Azure.FunctionsCoreTools -e
-# or, without an installer:
-npm install -g azure-functions-core-tools@4 --unsafe-perm true
-```
+For provider installation and sign-in, follow
+[Bring your own AI](bring-your-own-ai.md#choose-a-provider-at-startup-or-in-sds).
+The following Windows launcher notes explain its diagnostics; they are not
+another installation checklist.
 
 Run the Function host on a Node version it supports (22 or 24). Node 20 reached
 end of support in April 2026, and odd-numbered Current releases such as Node 25
@@ -1270,6 +1273,11 @@ Export library JSON before broader site-data cleanup. Clearing local data
 does not delete another participant's copy or revoke a shared link.
 
 ## Implementation and contributor references
+
+**Next:** [Use cases](use-cases.md) and [architecture and design](architecture.md)
+explain how these workflows and settings fit together.
+Return to the [reading order](../README.md#reading-and-review-order) for
+focused references.
 
 | Surface | Source of truth |
 |---|---|

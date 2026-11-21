@@ -1,5 +1,7 @@
 # TM7 drawing compatibility
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md#import-and-export) → TM7 compatibility
+
 **Save `.tma` for the full-detail model.** TM7 is a bounded drawing projection,
 not another extensible SecureDesignStudio document format. File > Save as >
 Microsoft Threat Modeling Tool previews losses before download. File > Import >
@@ -120,7 +122,7 @@ native threat data as unsupported before replacement; keep the `.tma` original.
 
 ## Evidence boundary
 
-Synthetic tests in `tests/authentication/tm7-semantics.test.mjs` cover roles,
+Tests in `tests/authentication/tm7-semantics.test.mjs` cover roles,
 scope, native-shaped independent inputs, references, parallel flows, conflicts,
 escaping, losses and no-mutation behavior. Run them with:
 

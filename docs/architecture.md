@@ -1,5 +1,7 @@
 # SecureDesignStudio architecture and design
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → [Use cases](use-cases.md) → Architecture
+
 *Updated: 2026-11-09 - Reviewed runtime modes, state ownership and recovery against the current implementation.*
 
 This page explains how SecureDesignStudio (SDS) is built. It is meant for
@@ -38,7 +40,7 @@ flowchart LR
   deployer([Deployer or library maintainer])
   recipient([Report or export recipient])
 
-  sds[SecureDesignStudio<br/>single-page app in Edge or Chrome]
+  sds[SecureDesignStudio<br/>single-page app in a modern browser]
 
   storage[(Browser storage<br/>localStorage and IndexedDB)]
   files[(Local files<br/>.tma .tm7 .json .pmexp)]
@@ -197,7 +199,7 @@ erDiagram
 | `PsEdge` | Shared | A directed source-to-target call. Holds authentication method, caller Application ID, audience, communication profile, required access rights and waypoints. Missing values mean *unspecified*, never *none*. |
 | `PsBoundary` | Shared | A security or privacy rectangle with a subtype and optional network-intent notes. Membership is the `nodeIds` it contains; boundaries can overlap. Boundaries describe intent and do not enforce isolation. |
 | `Scenario` | Per workflow | Membership lists, call order (`edgeIds` and `edgeNumbers`), DFD scope reasons, and data attachments. Request data is checked against the target's policy; response data against the source's. |
-| `PsData` | Shared catalog | A reusable data item with a classification and an optional synthetic sample. |
+| `PsData` | Shared catalog | A reusable data item with a classification and an optional sample. Use fictional values for practice. |
 | `PsComment` | One scenario | Discussion on a node or edge in one scenario, with replies and Active or Resolved status. |
 | `PsIssue` | Several scenarios | A finding on a node or edge. Analyzer issues carry a rule `kind`; manual issues and authored threat notes do not, so Analyze never touches them. |
 | `PsDeviation` | Document | An evidence-backed exception with a stable `key` so repeated evidence reviews update rather than duplicate it. |
@@ -445,7 +447,7 @@ See [Custom Libraries](custom-libraries.md) for the package contract.
 Tests use Node's built-in test runner. Pure contracts live in
 [`tests/authentication/`](../tests/authentication) (`npm run test:runtime`).
 Browser suites drive an installed Edge or Chrome with `playwright-core`
-against an owned Vite server, synthetic `.tma` fixtures and a network policy
+against an owned Vite server, test `.tma` fixtures and a network policy
 that blocks all non-local traffic ([`tests/browser/README.md`](../tests/browser/README.md)).
 [Contributing](contributing.md) maps each kind of change to the suites it
 requires.

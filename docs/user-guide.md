@@ -1,5 +1,7 @@
 # SecureDesignStudio user guide
 
+[Home](../README.md) → [Reading order](../README.md#reading-and-review-order) → User guide
+
 Use SecureDesignStudio in a **modern browser on Windows, macOS, or Linux**,
 such as Firefox, Microsoft Edge, or Google Chrome.
 
@@ -10,6 +12,10 @@ such as Firefox, Microsoft Edge, or Google Chrome.
 3. [Start the support-case walkthrough](#3-start-the-support-case-walkthrough)
 4. [Walk through the calls in sequence](#4-walk-through-the-calls-in-sequence)
 5. [Review the support-case design](#5-review-the-support-case-design)
+
+**First visit:** read sections 1 and 2, then work through sections 3-5.
+This guide owns beginner setup; you do not need a separate setup document.
+Skip optional AI exercises until your manual model is complete.
 
 For settings, libraries, import/export, and troubleshooting, see
 [Advanced configuration and reference](advanced-configuration.md).
@@ -43,9 +49,11 @@ or compliant.
 
 ### From source on Windows, macOS, or Linux
 
-Use Git, a terminal, current Edge or Chrome, and **Node.js 24 LTS with npm**.
-The locked frontend toolchain requires Node 22.12 or later; Node 24 LTS is
-the recommended choice and also supports the repository's contributor checks.
+Use Git, a terminal, a modern browser such as Firefox, Microsoft Edge, or
+Google Chrome, and **Node.js 24 LTS with npm**.
+Use Node 24 LTS for these setup steps and the repository's contributor checks.
+Node 22.12 is the frontend toolchain's minimum, not the recommended setup.
+The optional managed Azure API has a separate runtime setting.
 Ordinary modeling needs no Azure account, API, MCP server or cloud resource.
 
 | Platform | Setup notes |
@@ -89,52 +97,15 @@ If you prefer to run the underlying steps yourself, `npm ci` followed by
 
 ### Start with the optional AI assistant
 
-The AI Design Assistant is **bring your own AI**. No model service ships with
-SecureDesignStudio and none is provided for you. Choose one provider: an Azure
-OpenAI/Foundry deployment you are authorized to use, or the official Claude Code
-or Codex CLI signed in with your own eligible subscription. Everything in this
-guide except Chat, AI Analysis, Simulate breach and Design with AI works
-without it.
+AI is optional. **You supply the provider and access to it**; no model service
+ships with SecureDesignStudio. Manual editing and **Review > Analyze** need
+none of this setup.
 
-Choose a provider at startup. The remaining setup differs by provider:
-
-On any supported OS, use `npm run start:ai -- --provider azure` (or `claude`
-or `codex`). On macOS/Linux, `./start-securedesignstudio-with-ai.sh` accepts
-the same options. The PowerShell examples below are Windows alternatives.
-See [cross-platform AI startup](bring-your-own-ai.md#cross-platform-startup)
-for diagnostics and Node build requirements.
-
-| Requirement | Notes |
-|---|---|
-| AI provider | Choose Azure OpenAI/Foundry, Claude Code, or Codex in the launcher or in SDS. |
-| Azure Functions Core Tools | Required only for Azure; runs the local API on port 7071. The launcher reports the install command if it is missing. Claude/Codex use Vite on port 5173 and require no Functions installation. |
-| Azure CLI, signed in | Required only for Azure. A secured account accepts Microsoft Entra tokens, so `az login` is required. No API key is used. |
-| Azure OpenAI deployment | Required only for Azure: its HTTPS endpoint and model deployment name. |
-
-```powershell
-$env:AZURE_OPENAI_ENDPOINT = "https://<your-resource>.openai.azure.com"
-$env:MODEL_DEPLOYMENT_NAME = "<your-model-deployment-name>"
-az login
-.\Start-SecureDesignStudio-WithAI.ps1 -Provider Azure
-```
-
-For Azure, add `-VerifyEndpoint` to probe the deployment before starting. The
-probe sends an inference request and may incur usage. It reports a missing
-role, a blocked IP, or a wrong deployment name as a clear message rather than
-an opaque failure in the browser.
-
-For Claude or Codex, install and sign in to its CLI (`claude auth login` or
-`codex login`), then start with `-Provider Claude` or `-Provider Codex`. No
-Azure resource, Azure CLI or Functions Core Tools is needed. Add
-`-DiagnoseProvider` to check CLI readiness without starting servers or making
-an inference request. Omit `-Provider` for an interactive menu. Successful
-sign-in alone does not establish executable discovery or isolation support;
-see [CLI startup troubleshooting](bring-your-own-ai.md#troubleshoot-subscription-cli-startup).
-
-To create an Azure OpenAI instance and secure it properly — disabling key
-authentication, restricting network access, and assigning the data-plane role —
-follow [Bring your own AI](bring-your-own-ai.md). For what the assistant sends,
-see [advanced configuration](advanced-configuration.md).
+After completing the manual walkthrough, use [Bring your own AI](bring-your-own-ai.md)
+for the single provider-setup guide: Azure OpenAI/Foundry, Claude Code, or
+Codex CLI. It covers each provider's prerequisites, cross-platform startup,
+sign-in, and troubleshooting. For what the assistant sends and saves, see
+[the request disclosure](advanced-configuration.md#what-is-sent-and-what-is-saved).
 
 ### Update an existing clone safely
 
@@ -254,6 +225,15 @@ service. Do not enter real customer data.
    controls just to clear a warning. Choose **File > Save as >
    SecureDesignStudio model (.tma)** and save `support-case.tma`.
    Use **File > Open** to reopen it.
+
+![The completed support-case diagram contains Support web, Support API, Case store, and the two directed calls inside their recorded boundaries.](images/support-case-diagram.png)
+
+*Compare the names, call direction, and boundaries with your own model.
+These are practice assumptions, not proof of service configuration.*
+
+**First walkthrough:** continue with [editing, undo, and recovery](#editing-undo-and-recovery),
+then [Sequence](#4-walk-through-the-calls-in-sequence). Return to the optional
+node-details and AI-design exercises later.
 
 ### Optional node details: asset ID and endpoint matching
 
@@ -478,6 +458,8 @@ when a user submits a case.
 7. **Return and save.** Choose **View > Diagram**. Your three nodes and two
    flows are the same model, not a converted copy. Use **File > Save**.
 
+![Sequence view shows Submit case from Support web to Support API, Store case from Support API to Case store, and the dashed returns in reverse order.](images/support-case-sequence.png)
+
 Now review the design and record any questions in section 5.
 
 <a id="5-analysis-and-review"></a>
@@ -533,6 +515,9 @@ you recorded; it does not inspect deployed resources.
    as **Pending review**. You are recording work, not sending it to Azure DevOps.
 4. **Save your review.** Use **File > Save** to keep the comments, work item,
    and corrected settings in your current `.tma`.
+
+**Next without AI:** [export a PNG image or HTML report](#share-the-sample-as-a-png-image-or-html-report).
+Skip the optional AI review below on your first walkthrough.
 
 ### Optional: review the same sample with AI
 
@@ -821,3 +806,8 @@ You have now created, edited, walked through, reviewed, and exported one complet
 
 For library customization, scope settings, import/export formats, collaboration,
 and troubleshooting, use [Advanced configuration and reference](advanced-configuration.md).
+
+**Next:** [More sample models](../samples/README.md), then
+[advanced settings](advanced-configuration.md).
+Return to the [reading order](../README.md#reading-and-review-order) whenever
+you need to choose a reference.

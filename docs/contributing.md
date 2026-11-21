@@ -1,5 +1,7 @@
 # Contributing and local validation
 
+[Home](../README.md) → [Architecture](architecture.md) → Contributing
+
 SecureDesignStudio uses TypeScript, React, Vite and Node's built-in test runner.
 Use Node 24 LTS (`.nvmrc`), npm and an installed Microsoft Edge or Google Chrome
 browser for browser tests. They use Edge by default; on macOS and Linux set
@@ -56,7 +58,7 @@ literal closing-tag escaping and missing-resource failures. Selective
 glob-based inlining is intentionally not supported.
 
 See the [browser guide](../tests/browser/README.md) for exact coverage,
-configuration-specific production tests, synthetic fixtures and output paths.
+configuration-specific production tests, test fixtures and output paths.
 Run browser suites serially; they own and stop only their own server.
 Assistant production navigation tests require an explicitly configured
 same-origin endpoint and intercept responses rather than calling a live API.

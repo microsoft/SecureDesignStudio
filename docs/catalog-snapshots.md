@@ -1,5 +1,7 @@
 # Portable catalog-definition snapshots
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md#import-and-export) → Catalog snapshots
+
 Starting with 0.1.26, native documents can carry display definitions for five
 catalogs: classifications, production-identity tenants, privacy boundary
 subtypes, security boundary subtypes, and deviation kinds.
@@ -21,7 +23,7 @@ their existing contracts.
       "kind": "classification",
       "id": "PartnerRestricted",
       "label": "Partner restricted data",
-      "description": "Display metadata supplied with this synthetic model.",
+      "description": "Display metadata supplied with this sample model.",
       "library": {
         "id": "example-library",
         "version": "1.0.0"

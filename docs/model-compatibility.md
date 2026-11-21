@@ -1,5 +1,7 @@
 # Unavailable catalog references
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md#import-and-export) → Model compatibility
+
 Native `.tma` documents can contain classification, production-identity tenant,
 privacy/security boundary subtype, and deviation-kind identifiers that are not
 defined in the running build. A missing definition is different from invalid
@@ -70,4 +72,4 @@ coerce or discard saved catalog definitions, communication profiles, and caller
 Application IDs; this build cannot prevent an older client from writing a lossy
 update. No new schema version or persistence namespace makes an older client
 safe. Keep an editable `.tma` backup before using older tools or live rooms;
-local synthetic peer checks are not a live-service guarantee.
+local test-peer checks are not a live-service guarantee.
