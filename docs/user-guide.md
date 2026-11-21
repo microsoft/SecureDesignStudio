@@ -1,59 +1,43 @@
 # SecureDesignStudio user guide
 
-*Updated: 2026-11-20 - Cross-platform setup and unified Findings guidance.*
+Use SecureDesignStudio in a **modern browser on Windows, macOS, or Linux**,
+such as Firefox, Microsoft Edge, or Google Chrome.
 
 **Contents**
 
 1. [What SecureDesignStudio is](#1-what-securedesignstudio-is)
 2. [How to install and run](#2-how-to-install-and-run)
-3. [Simple how-to](#3-simple-how-to)
-4. [Advanced features](#4-advanced-features)
-5. [Analysis and review](#5-analysis-and-review)
-6. [Using sequence view](#6-using-sequence-view)
-7. [Import and export](#7-import-and-export)
-8. [Troubleshooting and quick reference](#8-troubleshooting-and-quick-reference)
+3. [Start the support-case walkthrough](#3-start-the-support-case-walkthrough)
+4. [Walk through the calls in sequence](#4-walk-through-the-calls-in-sequence)
+5. [Review the support-case design](#5-review-the-support-case-design)
+
+For settings, libraries, import/export, and troubleshooting, see
+[Advanced configuration and reference](advanced-configuration.md).
 
 ## 1. What SecureDesignStudio is
 
-SecureDesignStudio helps engineers, service owners, and security/privacy
-reviewers describe information flows, record assumptions and controls, and
-review a design.
+SecureDesignStudio helps you draw how information moves through a system,
+describe its security and privacy controls, and record review questions.
 
 | Concept | Meaning |
 |---|---|
-| **Node** | A service, process, datastore, or external dependency. |
-| **Flow / edge** | A source-to-target call with request and response data. |
-| **Boundary** | A labeled security perimeter or privacy region containing nodes. |
-| **Scenario** | A workflow with its own membership, call order, data attachments, retention, and comments. |
-| **Deviation** | A document-wide, evidence-backed exception with a stable key, required explanation, and review status. |
-| **Document** | The whole model, scenarios, and review records, saved as `.tma`. |
+| **Node** | A component, such as a web app, API, database, or outside service. |
+| **Flow / edge** | An arrow showing a call from one component to another. It can carry request and response data. |
+| **Boundary** | A labeled area around components that share a security or privacy requirement. |
+| **Scenario** | One workflow, with its own components, call order, data, retention choices, and comments. |
+| **Finding** | A concern raised during review, for example by Analyze, AI, or a reviewer. |
+| **Deviation** | A recorded difference between the model and service evidence, with an explanation. |
+| **Document** | The whole model, including scenarios and review records. Save it as a `.tma` file. |
 
-Nodes, edges, and boundaries are shared across scenarios. Renaming a shared
-node changes it everywhere; changing a scenario's flow order does not.
-Selecting a scenario hides objects outside its membership.
+Nodes, flows, and boundaries can belong to several scenarios. Renaming a shared
+node changes it in every scenario. Call order and retention can differ between
+scenarios. Choose a scenario in the top bar to see its workflow, or **Show all**
+to see the whole model.
 
-Use **Optimize**, beside the bottom-left zoom controls, to arrange the visible
-nodes, boundaries, annotations and flows with space for their full labels.
-The result is saved geometry: continue dragging or editing immediately, save
-normally, or use one ordinary **Undo** to restore the previous layout.
-Shared objects use the same geometry in every scenario; hidden objects stay
-in place, although a shared boundary may expand to contain its moved members.
-Use Show all to arrange the whole model. Crossing (neither disjoint nor nested)
-boundary memberships cannot be arranged automatically; Optimize reports this
-without changing the document. Dense models can still need manual routing and
-zooming to inspect individual flows.
-
-TM7 imports bind boundaries to the original fully enclosed stencils, including
-nested and overlapping scopes. Re-import the original TM7 to recover bindings
-missing from an older import. Shared boundary/node pairs retain their first
-observed containment, with conflicting later tabs disclosed during import.
-Optimize keeps the full flow title and visible communication-profile and
-authentication indicators when specified. Editing those fields updates the
-indicators without rewriting the imported title.
-
-**This is modeling metadata, not resource configuration or certification.**
-Authentication describes flows, not app sign-in. Boundaries do not enforce
-isolation; a clean analysis does not prove real services secure or compliant.
+**The diagram describes a design; it does not configure your services.**
+Selecting authentication does not enable sign-in. Drawing a boundary does not
+enforce isolation. A review with no findings does not prove a system is secure
+or compliant.
 
 ## 2. How to install and run
 
@@ -94,7 +78,7 @@ Open **http://localhost:5173/**. Keep that terminal running; Ctrl+C stops it.
 Port 5173 is strict: the launcher checks it first and, when it is busy, reports
 how to inspect its owner. Stop only your own server, and never an unfamiliar process
 on a shared machine. Follow the
-[port guidance](#8-troubleshooting-and-quick-reference).
+[port guidance](advanced-configuration.md#troubleshooting-and-quick-reference).
 
 This starts Vite only. Collaboration and Design Assistant are disabled.
 After initial page load, editing, analysis, autosave, and local file operations
@@ -181,1252 +165,659 @@ To build it from your trusted clone, run `npm run build:single` and open
 works offline, but enabled collaboration can contact services, unlike
 `npm start`.
 
-## 3. Simple how-to
+<a id="3-simple-how-to"></a>
+
+## 3. Start the support-case walkthrough
+
+Sections 3–5 follow one example: build a support-case model, follow its calls,
+then review and export it.
+
+<a id="build-a-model-manually"></a>
+
+### Create the sample manually
+
+**In this exercise, you will create the diagram yourself. Start by choosing
+Create, not Design with AI.** You need no AI service, real application IDs,
+or live resources.
+
+The sample is **Submit a support case**: a web app sends a case to an API,
+which saves it in a storage account. All names, settings, and explanations
+below are fictional practice choices, not recommendations for a production
+service. Do not enter real customer data.
+
+1. **Create the scenario.** In a blank app, enter `Submit a support case` in
+   **Create your first scenario**, then choose **Create**.
+   If you already have a model open, save it first. Use **File > New** for a
+   fresh model, or **Model > New scenario** to add this exercise to your
+   current model. Make sure `Submit a support case` is selected in the top bar.
+2. **Add three nodes, one at a time.** Right-click blank canvas and choose
+   **New Node**. In **each node's Properties > General / Security**, enter its
+   **Title** and choose its **Type** using the table below. Repeat until all
+   three nodes are present. Other fields can stay unchanged for now.
+
+   | Title | Type |
+   |---|---|
+   | `Support web` | **App Service app** |
+   | `Support API` | **App Service app** |
+   | `Case store` | **Storage account** |
+
+3. **Connect the nodes.** Drag a connection handle from Support web to Support
+   API. Select the arrow and set its **Title** to `Submit case`.
+   Create a second arrow from Support API to Case store and name it `Store case`.
+   Check that both arrows point in the direction of the call.
+4. **Set communication and authentication on both flows.** Select each arrow,
+   open **Properties > General / Security**, and set the following:
+
+   | Flow | Communication: Protocol profile | Authentication method |
+   |---|---|---|
+   | `Submit case` | **HTTPS** | **Entra user** |
+   | `Store case` | **HTTPS** | **Managed identity** |
+
+   For this sample, assume a signed-in user submits the case and the API uses
+   its managed identity to write to storage. These selections describe that
+   assumption; they do not configure or verify it.
+   **Optional for your own model:** if you have the real values, you can also
+   enter the caller's **Application ID**, intended audience, access constraints,
+   and required access rights where applicable. For this demo, leave those
+   fields blank and go to step 5. Analyze may later ask for missing details;
+   that is an expected review question in this exercise.
+5. **Add and attach the data.** Choose **Model > Data Elements > Add data item**.
+   Name it `Case text`, choose **Customer Content**, and leave **Sample** blank.
+   Select `Submit case`, open its **Privacy** tab, and attach `Case text` under
+   **Data in request**. Do the same for `Store case`, reusing the same data item.
+6. **Add security and privacy boundaries.** Right-click blank canvas and choose
+   **New Security Boundary**. Name it `Support service`, choose **Azure** as its
+   **Security subtype** in Properties, and resize it around Support API and
+   Case store. Drag the outer border to move it; use its handles to resize.
+   Then choose **New Privacy Boundary**, name it `Case data region`, select
+   **Geo boundary** as its **Privacy subtype**, and resize it around those
+   same two nodes. The privacy boundary surrounds the components that handle
+   `Case text`, not the data item's entry in the Data list.
+   Right-click the `Submit case` flow, choose **Add new comment**, paste this
+   fictional explanation, then click **Post**:
+   `For this exercise, the API processes case text and the store keeps it in
+   the same approved region. The web app sends the text into that region.
+   The Support service boundary marks the Azure components managed by our team.`
+   You do not need AI to write this explanation. Neither boundary enforces
+   the stated controls.
+7. **Set retention.** Choose **Review > Analyze** to add incoming data to the
+   receiving nodes' privacy inventories. Select Support API, open **Privacy**,
+   and set `Case text` to **Processing only (no storage)** for this scenario.
+   Select Case store and set it to **Storage ≥ 48 hours**.
+   These are sample assumptions; real retention periods need owner approval.
+8. **Select Optimize.** Use **Optimize** beside the bottom-left zoom controls,
+   or **View > Optimize diagram**, to arrange the diagram. You can still drag
+   nodes and adjust flows afterward. Use **Undo** if you prefer the old layout.
+9. **Review and save.** Choose **Review > Analyze** again, then open
+   **Review > Issues** to read the remaining questions. Record anything you
+   cannot answer as a comment or work item; do not invent real identities or
+   controls just to clear a warning. Choose **File > Save as >
+   SecureDesignStudio model (.tma)** and save `support-case.tma`.
+   Use **File > Open** to reopen it.
+
+### Optional node details: asset ID and endpoint matching
+
+Continue with the **Submit a support case** diagram you just created.
+This optional exercise adds asset labels, then shows how the app uses endpoint
+patterns to recognize the types of components in a file.
+
+1. **Label your three assets.** Select each node and enter the following in
+   **Properties > General / Security > Inventory ID**:
+
+   | Node | Asset ID |
+   |---|---|
+   | Support web | `SUPPORT-WEB-001` |
+   | Support API | `SUPPORT-API-001` |
+   | Case store | `SUPPORT-STORE-001` |
+
+   These fictional IDs identify your assets in the diagram; they do not create
+   anything in Azure. Save your model before trying the next steps.
+2. **Set the matching patterns for this exercise.** Open **Model > Node Type
+   Catalog**, search for **App Service app**, and select it to edit.
+   Replace **Endpoint regex** with the first pattern below, then choose
+   **Save type**. Repeat for **Storage account** using the second pattern.
+   Leave other type settings unchanged.
+
+   | Type to edit | Copy into Endpoint regex | What it recognizes |
+   |---|---|---|
+   | App Service app | `^https://support-(web\|api)\.example\.com(/\|$)` | The fictional Support web and Support API addresses |
+   | Storage account | `^https://case-store\.example\.com(/\|$)` | The fictional Case store address |
+
+   A regex is a matching pattern. You can copy these as written; you do not
+   need to learn regex syntax for the exercise. Both Support web and Support
+   API use the same **App Service app** type, so they share its matching rule.
+   These edits are saved in this diagram's catalog, not the shipped library.
+   **Do not enter these patterns in individual nodes' EndpointRegex fields:**
+   the importer uses the type definitions you just edited.
+3. **Create the endpoint file.** In a text editor, paste the following and save
+   it as `support-endpoints.txt`, with one address per line:
+
+   ```text
+   https://support-web.example.com/
+   https://support-api.example.com/cases
+   https://case-store.example.com/cases
+   ```
+
+4. **Import the text file.** Switch back to the browser tab containing
+   SecureDesignStudio. At the top of the app, open the **Scenario** dropdown
+   and choose **Submit a support case**, the scenario you created in step 1
+   of the main walkthrough. If it is already selected, leave it selected.
+   Open the **Model** menu and click **Endpoint matching**.
+   In the **Import nodes from Endpoints** dialog, click **Choose file…**.
+   Find `support-endpoints.txt` in the folder where you saved it, select it,
+   and click **Open** in the file picker. The import runs when you open the file;
+   there is no separate Import button.
+5. **Read the browser's result popup.** Immediately after import, a popup
+   should say:
+
+   ```text
+   Imported 0 new node types (2 matched in total). All endpoints recognized.
+   ```
+
+   Click **OK** to close it. The popup shows totals, **not a list of which
+   address matched which type**. In this exercise, the patterns you entered
+   match the web and API addresses to **App Service app**, and the store
+   address to **Storage account**.
+   Zero new nodes is expected because both types already exist in your diagram.
+   Your three nodes and two flows stay in place; no matching labels or URL
+   assignments are added to them. If you already closed the popup, import the
+   same file again to see the totals; it will not duplicate existing types.
+   If the popup reports unmatched addresses, check the copied patterns and file
+   contents. Those lines are downloaded in `support-endpoints_unknown.txt`.
+6. **Save the exercise.** Save your `.tma` again to keep the asset IDs and
+   edited type definitions.
+
+Endpoint matching is useful when you have an endpoint list and want to add
+missing component types to a model. It adds one node per missing type, not one
+per address. It does not visit the URLs, configure services, or draw flows.
+
+### Editing, undo, and recovery
+
+Continue with **Submit a support case**. Try a small edit, undo it, and reopen
+your saved model:
+
+1. **Save a starting copy.** Choose **File > Save** to save your current
+   `support-case.tma`. If you have not saved it yet, choose **File > Save as >
+   SecureDesignStudio model (.tma)** and use that filename.
+2. **Edit the API node.** Click **Support API** on the diagram, then choose
+   **View > Properties**. In **General / Security**, select all the text in
+   **Title** and paste `Support API - reviewed` over it in one edit.
+   Click outside the Title field.
+   Check that the node's label on the diagram now shows the new name.
+3. **Undo the edit.** Click the app's **Undo** button. The node should be named
+   `Support API` again. If Properties no longer shows the node, click it again
+   to see its details.
+4. **Redo the edit.** Click **Redo**. The label should return to
+   `Support API - reviewed`. Click **Undo** once more to restore `Support API`
+   so the names still match the rest of this exercise.
+5. **Practice reopening your backup.** Choose **File > Open**, select
+   `support-case.tma` from the folder where you saved it, and click **Open**.
+   Confirm replacement if asked. In the top **Scenario** dropdown, choose
+   **Submit a support case** if it is not already selected. Check that your
+   three nodes, two flows, boundaries, and saved settings are still present.
+
+For document shortcuts, click outside text fields before pressing Ctrl+Z
+(Cmd+Z on macOS) for Undo. Inside a field, that shortcut may undo typing instead.
+
+**Autosave helps recover unsaved work in the same browser profile and site;
+it is not a backup.** If recovery is unavailable, use **File > Open** to reopen
+your saved `.tma`, as you just practiced. Edits made after that file was saved
+will not be in the file. Save regularly, especially before replacing or sharing
+a model or clearing browser storage.
 
 ### Build a proposed threat model with AI
 
-When the existing Assistant service is configured, choose **Design with AI**
-on the first-scenario screen, or **File > Design with AI** (directly below
-**Open**) for the selected
-scenario. For example: “I need a web server to securely host documents for
-authenticated users.” With an existing document, select a scenario first:
-**Show all** cannot be an authoring target. **New scenario** remains a manual
-creation flow; create and select it before asking AI to populate it.
-
-The **Threat Model Designer** is a modeless prompt dialog. Enter sends;
-Shift+Enter inserts a newline. A valid response immediately adds or refines
-catalog-backed components, directional flows, data and boundaries. The model
-switches to Diagram view and fits the design. **Collapse** leaves more canvas
-visible. Drag the title bar to move the dialog, or focus the title bar and use the
-arrow keys (Shift+arrow moves farther). It stays within the available viewport
-when resized. Active filters have an explicit **Clear filters and show design**
-remedy. The bottom-left zoom controls remain available.
-
-Each applied response is one model Undo step, including creation of the first
-scenario. Redo restores it. Ask follow-up questions to refine the same IDs.
-Clarifications, invalid/incomplete responses and cancelled requests do not
-change the model or history. **Stop generating**, closing the dialog, switching
-scenarios or a timeout discards the pending response. If model semantics or
-catalog choices change while AI is working, resend the prompt; it will not
-overwrite that work. Existing authored geometry is retained where possible;
-unsafe boundary expansion is rejected rather than enclosing unrelated nodes.
-
-AI can add, edit and delete components, connections and boundaries, redirect
-connections, and remove data attachments or boundary members. Give an explicit
-design instruction such as **"Route browser traffic through Application Gateway
-and remove the direct connection to the web app."** Adding an exclusive gateway
-should replace bypass paths, not simply add parallel connections. Advice-only
-questions can still return an explanation without changing the diagram.
-
-**Deletion is global**, matching the editor's Delete action, including all
-scenarios using the item. Deleting a component removes its remaining incident
-connections and their comments/issues; a connection explicitly rerouted away
-from it in the same response survives. Deleting a boundary keeps its components.
-Evidence-backed deviations are retained without their deleted target, not
-silently resolved. Other model content and reusable data are preserved.
-
-Rerouting retains the connection ID and sequence numbers, updates the connection
-everywhere it is shared, and includes its new endpoints in those scenarios.
-Old endpoint-specific identity/audience/rights claims and routing handles are
-cleared where no longer applicable; review the new flow's required controls.
-Data attachment replacement affects only the selected scenario, not reusable
-data, other scenarios' attachments, or previously recorded node retention.
-Removing boundary members moves them outside that boundary while preserving
-their other memberships. Conflicting geometry rejects the entire response.
-
-Each response remains **one Undo step** for all additions, removals and reroutes.
-The result shows counts calculated from the applied model, rather than only
-the AI's prose. Empty/no-op responses do not add history. Request/response data
-remain separate. New catalog selections must still be available and permitted.
-
-To change the execution sequence, ask **"Order the flows browser to WAF, WAF
-to backend, then backend to Copilot."** AI can explicitly reorder the selected
-scenario's complete flow list and renumber it from 1. Other scenarios keep their
-own order and numbers. This does not change the connection endpoints or canvas
-positions. Sequence participants follow first appearance in the saved flow list;
-an order-only edit keeps Sequence view open so the result is immediately visible.
-Correct connectivity alone does not establish correct execution order.
-
-When AI attaches data to a flow, the receiving node's **Privacy** inventory is
-populated immediately in the same undoable edit: request data goes to the
-target, response data to the source. You do not need to run Analyze first.
-The node's General tab offers **View privacy data** when items are recorded.
-Newly propagated retention is **Not specified** until you choose it; existing
-retention choices are preserved. "Low risk" does not mean public/nonpersonal
-data or establish that data is never stored. Review classification and retention
-separately. Removing a flow attachment does not erase prior node retention.
-
-**This is proposed, unverified design intent, not deployment evidence,
-certification or a complete threat assessment.** Review generated descriptions,
-assumptions, authentication, data and boundaries before relying on them.
-Specialized services without an available catalog entry require an explained
-generic component or clarification. No deployment or evidence discovery occurs.
-
-Your prompt, up to 12 prior conversation messages, the selected scenario's
-authoring context and available catalog choices go to the **same configured
-Assistant endpoint**. The dialog discloses the destination. Conversation is
-retained in this browser session when you close and reopen the dialog, including
-your unfinished prompt. Closing still cancels a pending request; it cannot apply
-a late response. Switching scenarios, opening or creating a model, or refreshing
-clears the conversation and draft. Neither is saved in `.tma`, autosave,
-standalone HTML or collaboration. Generated model content and explicit
-assumptions are saved normally. **Review > Design Assistant** remains the
-separate analysis/chat experience.
-
-Default credential-free `npm run dev` makes no AI requests. Manual scenario
-creation remains available. To enable AI, use the existing explicitly configured
-[optional AI workflow](advanced-configuration.md#optional-local-design-assistant);
-this feature introduces no new service or credential setting.
-
-### Build a model manually
-
-Use synthetic data for **Submit a support case**: a web frontend calls an API
-that writes to a storage account. Authentication and retention below are practice
-assumptions, not service policy recommendations.
-
-1. **Start a scenario.** In a blank app, name it in **Create your first
-   scenario** and choose **Create**. To continue existing work instead, use
-   **Open model (.tma)…**, **Import TM7…** or **Import JSON…** in the same
-   dialog; no placeholder scenario is created. Cancelling a picker or declining
-   an import keeps the dialog and draft available. A failed import reports its
-   error without replacing the model. Otherwise save your existing
-   work before **File > New**, or use **Model > New scenario** to add a workflow without
-   replacing it. Select `Submit a support case` in the top bar.
-2. **Add three nodes.** Right-click blank canvas and choose **New Node**.
-   In **Properties > General / Security**, set titles `Support web`,
-   `Support API`, and `Case store`. Choose **App Service app** for the first
-   two and **Storage account** for the store. Unspecified policy needs review.
-3. **Connect the workflow.** Drag a node handle from Support web to Support
-   API, then from Support API to Case store. Select each arrow and set its
-   **Title** to `Submit case` or `Store case`. Direction follows the arrow,
-   not the nodes' left-to-right positions.
-4. **Describe communication and authentication.** In the flow's **Properties**
-   tab, choose a **Protocol profile** only when supported by design evidence;
-   **Not specified** does not establish plaintext or encryption. Then select
-   one authentication method separately. Enter a caller **Application ID**
-   only when the selected method requires it and the GUID is known. Record
-   audience and access constraints from evidence; do not invent production
-   identities or infer deployed controls from a protocol label.
-5. **Define and attach data.** Choose **Model > Data Elements > Add data item**.
-   Name it `Case text`, classify it as **Customer Content**, and leave Sample
-   blank or synthetic. On each flow's **Privacy** tab, attach it under
-   **Data in request**. Reuse the same item on both flows.
-6. **Mark the perimeter.** Right-click blank canvas > **New Security Boundary**.
-   Name it `Support service`, size it around Support API and Case store, and
-   explain the crossing in a flow comment. Add a **New Privacy Boundary**
-   when there is a meaningful privacy scope.
-7. **Complete retention.** Choose **Review > Analyze** to propagate incoming
-   data onto receiving nodes. Select Support API and Case store in turn;
-   in **Privacy**, set Case text retention for this scenario. For this
-   practice workflow, the API processes only and the store retains data at
-   least 48 hours. Verify real lifecycle requirements before using those choices.
-8. **Review and save.** Analyze again, inspect **Review > Issues**, and record
-   unanswered questions as comments or work items. Use **File > Save as >
-   SecureDesignStudio model (.tma)** and name it `support-case.tma`.
-   Use **File > Open** to reopen that saved file and check the scenario.
-
-Core provides an optional **Inventory ID**, accepting ordinary text such as
-`ASSET-123`. The compatible JSON field remains `serviceTreeId`. A selected
-Custom Library can provide an alternate field label, validation and a
-required-value check. Existing values remain editable without that library.
-Curated policies require a selected Custom Library or a saved document
-definition. Neutral public Dataverse, Dataverse Table, Dataverse
-Plugin, Microsoft Copilot Studio and Power Platform connectors are available
-without it. `CopilotStudio` is the public agent product; the optional spaced
-`Copilot Studio` identity is not its alias. See the [catalog guide](microsoft-cloud-node-catalog.md)
-for product distinctions, selected integrations and unresolved lifecycle scope.
-
-Opening node properties does not replace saved **Inventory ID** or
-**EndpointRegex** values with catalog defaults. When they differ, review the
-notice and use **Use type metadata** only if replacement is intended; it asks
-for confirmation and supports Undo/Redo. Recommitting the current type leaves
-the values alone. A different type applies only valid supplied defaults; fields
-without a supplied default keep their existing values.
-
-The right-hand inspector edits the selection; **View > Properties** returns
-to details. For nodes and flows, **Custom metadata** appears below **Issues**,
-after the **General / Security** or **Privacy** fields. **Undo/Redo** recovers
-edits. On narrow screens use the menus when direct buttons are hidden.
-**Autosave is recovery, not backup**:
-save `.tma` in an approved location before replacing or sharing a model.
-
-## 4. Advanced features
-
-### DFD roles and scenario scope
-
-A service **Type** and its **DFD role** are independent. In **Model > Node Type
-Catalog**, set Default DFD role to Process, Data Store, or External Interactor.
-Azure SQL has an explicit Data Store default. Other unclassified services use
-the conservative Process fallback; there is no title/icon-based guessing.
-In node **Properties > General / Security**, choose **Use type default** or an
-explicit override. A SQL node can be Process without changing its service type,
-identity, endpoint, or policy. An explicit override survives later type changes.
-
-For an active scenario, enter an **Out-of-scope reason** on the node. Blank or
-whitespace means in scope. The reason applies only to that scenario; duplicating
-a scenario copies its reasons independently. Show all displays per-scenario
-context and does not provide a global scope editor. Removing membership keeps a
-dormant reason for an existing node; deleting the node removes its reasons.
-
-Clear an ordinary editable reason by deleting its text. Recovery-only actions
-remain for nonblank inactive External Interactor reasons and unrecognized
-imported evidence; clearing them is explicit and undoable.
-
-The application's **Undo** and **Redo** treat a continuous scope-reason edit
-as one unit and keep its node editor visible while that node remains valid in
-the same active scenario. Leaving the field or editing another field starts a
-separate gesture; selected-text replacement and switching between typing and
-deletion are separate edits. Enter still inserts a newline and starts a new
-group. Other model actions are not folded into the scope edit. **Ctrl/Cmd+Z
-inside the text field** remains the browser's native text undo, not the app's
-history command. Editor context is local to the current session: restored or
-imported history does not carry this context and does not promise to reopen
-the same editor.
-
-External Interactors are black boxes, **never effectively out of scope**.
-Imported contradictory reasons remain visible but inactive and can be cleared.
-Unknown roles and malformed fields are retained as bounded recovery evidence,
-with visible diagnostics; they cannot silently exclude node interiors. Older
-models remain Process until explicitly adopting defaults, even when a newly
-installed library gives their service a different role.
-
-Canvas shapes, textual role/scope labels, dashed out-of-scope borders, sequence
-headers, edge context and reports carry the semantics without hiding graph
-content. **Scope appearance (this browser)** in Properties changes local accents
-only; shapes and labels remain and preferences are not collaborative model data.
-
-Only optional **LLM review** applies scope exclusions: Process/Data Store
-interiors are included unless out of scope; External Interactor interiors are
-excluded. All flows remain included except External Interactor connected to an
-out-of-scope node, in either direction. Request/response data use the same
-eligibility. Included crossing flows retain minimal endpoint identity context,
-not the excluded node's description, retention or other interior details.
-Missing endpoints are structural gaps, not successful review.
-**Analyze's deterministic checks are unchanged.** Scope edits do not delete,
-resolve or re-rate existing/manual findings.
-
-Native `.tma`, autosave/history, standalone HTML, semantic comparison and
-compatible Yjs peers retain the model's roles and per-scenario reasons.
-Node-catalog packages carry type role defaults, not node overrides or
-scenario scope reasons. Use clients
-with this feature on every peer: older normalizers can discard these fields.
-Concurrent changes to one scenario's reason map use the existing atomic-map
-Yjs behavior (one whole map wins, not per-node/text merging). Native `.tma`
-remains authoritative; external formats may omit these semantics.
-
-### Reuse scenarios without duplicating services
-
-Use **Model > Duplicate current scenario** or **New scenario > Start from**,
-then adjust membership and data. **Scenario settings** edits the description.
-Duplication copies memberships, numbering, attachments, and node retention,
-but not comment threads.
-
-**Add to scenario / Remove from scenario** changes the selected object's
-membership. Removing a node also removes its touching flows from that scenario.
-The last membership can offer deletion; global deletion affects all scenarios.
-Read **Model > Delete current scenario**'s impact dialog: scenario-exclusive
-nodes/flows can be deleted, while shared objects remain.
-
-### Choose and customize libraries
-
-**Model > Node Type Catalog** supports search, document-local definitions,
-shipped overrides/reset, and JSON import/export. Changes travel with `.tma`,
-not to other diagrams or repository source. Use the dialog's **Catalog**
-selector to choose **All node types**, **Generic** (29 vendor-neutral types),
-or **Microsoft** (Azure, Microsoft 365, Dynamics 365, Fabric and Power Platform).
-Other catalog choices appear automatically from installed type `catalogSource`
-metadata; adding a future vendor catalog needs no menu change. Document-local
-types appear under **Document**.
-Finish or cancel an edit before switching catalogs. Search applies within the
-selected catalog; saved overrides remain in their original built-in catalog.
-See the
-[cloud catalog](microsoft-cloud-node-catalog.md) for services, icons, sources,
-and Unspecified-policy limitations.
-
-**AI design guidance** is an optional, separate field in the catalog editor.
-Reviewed Microsoft cloud entries now include short **Context / Dependencies /
-Risks / Uncertainty** guidance, with explicit owner-withheld types left blank.
-For a Power Pages site that uses an agent to summarize Dataverse data, the
-default catalog offers `PowerPages`, `CopilotStudio` and `Dataverse` directly;
-Microsoft 365 Copilot need not be used as a substitute. Confirm the intended
-Copilot product, supported site/agent integration, effective connection
-identity and summary audience. Guidance does not create dependency nodes or
-verify that a proposed control is deployed.
-It is untrusted reference text for Threat Model Designer and Design Assistant,
-not a policy rule, risk waiver, or evidence that a deployment has a control.
-Methods have the same kind of card; see Customize authentication below.
-Existing Description text is never converted into guidance automatically.
-In node **Properties > General / Security**, expand **AI design guidance** to
-read it and its source URLs/revision/edit date. **Edit guidance for this type in
-this diagram** opens a draft with explicit Save and Cancel (Escape cancels and
-returns focus). Saving affects every node of that type in this diagram, across
-scenarios, but not installed libraries, instance metadata or policy. Undo/Redo
-restores the entire edit. Remove guidance from the draft and Save to clear it;
-the saved type definition still wins over installed guidance.
-Source URLs are not fetched automatically, and revision/date do not imply
-review approval. Native files, autosave, exported HTML, node catalogs and
-current-version collaborators retain guidance. Older readers and lossy external
-formats are not guaranteed to retain it. See the [guidance contract and
-limits](custom-libraries.md#ai-design-guidance).
-
-**Model > Customize authentication** opens one Authentication Library per
-browser profile/origin. Edit **Method**, **Description** and optional **AI
-design guidance** for flow selectors and node-type policies. It contains 17
-modern profiles plus the ambiguous
-legacy certificate entry. It also distinguishes **Internal process call** from
-anonymous access: use it only for calls that stay inside one process boundary
-and require no particular authentication mechanism. The flow inspector hides
-caller Application ID controls for this method while retaining any existing
-legacy identity evidence for later review. JSON import/export moves it between
-profiles without editing shipped source JSON.
-
-**Authentication AI design guidance** works like node-type guidance but is
-attached to a method. In the library editor it uses the same content, source
-URL, revision and edit-date fields; **Remove guidance from draft** and Save
-clears it, and Cancel discards the draft. Saving updates your profile library
-and matching definitions in the current diagram. On a flow, expand
-**Authentication AI design guidance** below the authentication selector to read
-the card, its sources, revision and edit date. It is labelled unverified
-reference guidance, not evidence that the flow is secure. Selecting a method
-sends no AI request, and source URLs are not fetched.
-
-On a flow, **Edit guidance for this method in this diagram** opens a draft with
-**Save guidance** and **Cancel guidance edit** (Escape cancels and returns
-focus). This is method-wide: Save changes the diagram's definition of that
-method for every flow that uses it, across all scenarios, but not your profile
-library, the flow's selected method, Description, audience, constraints,
-caller ID, rights or protocol. Use the flow Description for flow-specific
-context. Undo/Redo restores the whole edit. A saved diagram definition wins as
-a whole: if you remove its guidance, the library's card does not return unless
-you explicitly use the library definition in the diagram. If the method changed
-elsewhere while you edited, Save reports it and applies nothing; reopen the
-editor. Older builds may reject a definition containing guidance; the method
-compatibility notice does not guarantee guidance support, so keep an editable
-`.tma` backup.
-
-Design Assistant sends only the cards for methods used by flows in the reviewed
-scenario scope. Threat Model Designer sends cards for every selectable method
-when the whole request fits in one call; otherwise it sends cards for methods on
-included flows plus any it selects from a compact index. When the selected
-cards plus the
-rest of the request would exceed the size limits, it stops and asks for a
-smaller scope rather than dropping or batching cards. Cards are untrusted
-reference text, never instructions, policy or proof of a control. Four
-owner-specific methods (App + user context, CDT, PFAT and PoP + PFT; now core
-definitions) have
-deliberately limited cards, because no authoritative public specification was
-found: those cards list owner-contract questions and generic conditional facts,
-not a complete sourced description of the mechanism, so ask the owner for the
-contract.
-See the [guidance contract](authentication-library.md#ai-design-guidance),
-[custom-library rules](custom-libraries.md#ai-design-guidance) and
-[AI size limits](bring-your-own-ai.md#request-size-and-tokens-per-minute).
-
-Library presence is not target acceptance. **Not specified** means no selection;
-**Custom method** is unverified. Disabled methods remain on existing flows.
-Saved diagram definitions do not overwrite your library: resolve conflicts
-explicitly. Never infer direct mTLS from legacy certificate authentication.
-The [library contract](authentication-library.md) covers stable IDs,
-safe deletion, Undo/Redo, guidance and compatibility.
-
-**Model > Communication Library** edits the source-backed protocol profiles
-available to new edge selections. A diagram carries portable definitions for
-profiles it uses, so its saved definition wins when the browser library has a
-same-ID conflict; resolve that conflict explicitly. Profile authentication
-suggestions are advisory and never change the separate one-method selector.
-Protocol names and protection descriptions express design intent, not
-negotiated encryption, anonymity, or deployed controls. AI guidance and source
-URLs are untrusted reference context; URLs are not fetched. Older clients may
-discard protocol profiles or caller Application IDs when saving shared
-diagrams, so update clients and keep an editable `.tma` backup.
-
-### Document required flow access rights
-
-Select a flow and open **Properties > General / Security > Required access
-rights** to record an Azure RBAC role or rights such as read/write/execute.
-This is optional declared intent, not verification of deployed grants or
-compliance. Authentication, the standalone caller Application ID, and required
-access rights remain separate design inputs.
-The same flow shares its text across all scenarios; parallel flows have
-separate values. Blank means unspecified, not no rights required. The limit
-is 4,000 UTF-16 code units; some characters count as two. Invalid edits are
-rejected, not shortened.
-
-Save `.tma` or portable application HTML to retain the exact text and newlines.
-The HTML review report displays it in full with its flow. Use current editing
-clients and keep a native backup: older readers can discard this field.
-TM7, VSDX and PNG are not full-metadata backups. The
-[TM7 loss preview](tm7-compatibility.md#intentional-losses) reports nonblank
-rights omitted from exported flows; it does not map them to native permissions.
-
-### Document boundary network intent
-
-Move a security or privacy boundary by dragging its **outer border**, not its
-empty center. Empty interior space passes through to canvas gestures and
-underlying items, so it will not move the boundary or its contained nodes.
-Border dragging moves the boundary and its members together. Select its border
-or title to inspect it; use the visible resize handles to resize, and
-double-click the title to rename. Each move/resize is one Undo step.
-
-Select a security boundary and open **Properties** to edit **Inbound Allow**,
-**Inbound Deny**, **Outbound Allow**, and **Outbound Deny**. These four optional
-multiline values are plain-text declared intent, not parsed firewall rules,
-verified enforcement or compliance. Blank means undocumented. Text and
-newlines are retained without a field-specific length or network-syntax limit;
-non-text saved values produce an explicit recovery error rather than coercion.
-
-Notes belong to the boundary instance: the same ID shares them across scenarios.
-Ordinary new boundaries start blank and never infer a source. Scenario Duplicate
-shares boundary IDs; it does not create independent boundary copies. There is
-no new source selector, Duplicate command or inheritance mechanism.
-
-Switching to Privacy retains the notes as inactive native data, hides their
-editors and excludes them from reports and Assistant context. Switching back
-to Security restores access. Unrelated title, geometry and subtype edits keep
-the notes. Active security notes may accompany an explicitly requested
-Assistant review; editing them does not trigger an AI call.
-
-Save `.tma` or portable application HTML for a complete backup. Review reports
-show active notes as escaped multiline text. Use current editing clients:
-older readers may discard these fields. TM7, VSDX and PNG do not preserve this
-metadata. The [TM7 loss preview](tm7-compatibility.md#intentional-losses) counts
-distinct exported security boundaries with nonblank notes without displaying
-their contents or inventing native network fields. Privacy boundaries and
-objects outside all scenarios retain their existing separate omission notices.
-
-### Model privacy and lifecycle
-
-**Model > Customize classifications** opens the Classification Library editor.
-Add/edit names and descriptions, select an enabled default, disable or safely
-delete unused entries, and import/export JSON. Import previews distinguish
-Merge (keep the active identity/default) from Replace (use the incoming list).
-Existing IDs and saved definitions are retained; adopting a changed diagram
-definition is an explicit, undoable action.
-
-The Data inspector shows the active library/source/default. Existing
-out-of-list values remain readable while new choices use the active enabled
-list. See the [Classification Library contract](classification-library.md)
-for storage, recovery, history, and format details.
-
-Reuse Data Elements across flows. The shared defaults retain the original ten
-types and add Administrator Data and Customer Data, aligned with public
-[Microsoft Purview guidance](https://learn.microsoft.com/en-us/purview/purview-privacy).
-Customer Content stays narrower than Customer Data; Administrator Data describes
-people's administrative activity, not permission records. Read the descriptions
-and assess actual content: pseudonymized identifiers and system metadata can
-still be personal data. Category colors are not a legal risk scale.
-Do not enter real sensitive samples. Stored profiles and models keep their
-definitions until explicitly edited or updated; a newer build does not
-automatically replace them.
-
-Request data travels **source to target**; response data travels **target to
-source**. Attach each under the flow's Privacy tab and review policy on that
-direction's receiver. Attachment pickers use curated receiver policy;
-availability is not approval.
-
-After Analyze, review each receiving node's **Privacy** tab. Retention is
-per data item, node, and scenario: unset, processing only, storage under
-48 hours, or storage of at least 48 hours. Existing authored retention is
-preserved when data is propagated.
-
-Type-level default privacy boundary and GDPR handling are reference policy,
-not automatic boundaries. Geographic/post-subscription overrides appear where
-the type exposes them. Confirm retained-days ranges, calling-service
-responsibility, and Unknown/deferred values with the owner.
-
-### Navigate a larger model
-
-Core privacy boundaries offer Geo boundary. Core security choices are IFrame,
-CSP, Azure, User browser, User Tenant Trust, VNet, Subnet, Container, Process,
-and Machine. Select a boundary and use **Properties > Security subtype** to
-choose its type and read its description. New security boundaries still
-default to IFrame. A subtype describes intended separation, not proof that
-isolation is enforced; the Process boundary subtype is distinct from a node's
-DFD role.
-
-Optional library definitions can add boundary subtypes and evidence labels for
-new selections. Saved values retain their labels/descriptions or appear as
-unresolved IDs; they are not silently replaced with generic choices. A saved
-definition does not install a library. Saved definitions take precedence over
-same-ID installed definitions; **Saved catalog definitions** reports conflicting
-labels or descriptions without replacing the saved meaning. Without a saved
-snapshot, an available same-ID definition supplies the current meaning; this
-does not recover an absent author's original description. With neither a
-snapshot nor an available definition, the ID remains unresolved. See
-[Custom Libraries](custom-libraries.md) for the portable-definition contract.
-
-**Filter** stages text, node-type, auth, and classification choices until
-**Apply**. Cancel/Escape discards drafts; **Clear all** immediately clears
-active and staged filters. Only visibility changes.
-
-Inspector tabs cover Properties, Edges, Issues, Comments, Changes, Data, Work,
-and Findings. Tabs with a count show it beside the label. **Review > Findings**
-opens the unified review list with saved notes/issues, local analysis,
-service-model deviations, and the latest retained AI findings. Its STRIDE
-evidence table and scope/source/status filters organize retained evidence;
-zero counts do not establish security coverage or a pass. AI is not required
-to review local findings. Pin to retain a tab; ordinary
-unpinned tabs follow
-selection, while Edges/Changes retain context. Resize with the separator or
-its arrow keys; double-click to reset. **View > Inspector** closes/reopens it.
-On narrow screens, **Expand inspector** gives the bottom panel more height;
-**Restore inspector size** returns it to its usual height. These buttons work
-with keyboard and touch, and keep the canvas zoom controls above the panel.
-
-New browser profiles use **light mode**. Toggle **Settings > Dark Theme** to
-choose dark mode; your saved choice survives reloads. **Reset all preferences**
-returns to light mode without changing the diagram.
-
-In Diagram, drag a selected flow's line or double-click it to add routing
-waypoints; select a waypoint to move/delete it. Double-click a node or flow
-title for inline editing.
-
-### Collaborate or use optional AI
-
-**About** shows effective collaboration and Design Assistant availability and
-configured destinations. These are deployment settings, not permissions or
-proof that a service is reachable. A disabled collaboration build ignores room
-links and keeps editing local; the Assistant explains when no service is
-configured. A plain build has no collaboration or Assistant destination.
-Deployers explicitly select service configuration; Custom Libraries alone
-cannot enable networking. Removing service defaults does not replace the
-remaining content/licensing and public-release review.
-
-Deployed/standalone collaboration can start encrypted rooms from the status
-menu. Protect the full URL and its decryption key; share only with authorized,
-compatible peers. Rooms share diagrams, not profile library preferences.
-An optional Copilot CLI participant can inspect and make authorized edits.
-
-**Review > Design Assistant** provides optional network-backed Chat/AI Analysis,
-not local Analyze. It is **bring your own AI**: it calls the provider you
-choose, either an Azure OpenAI deployment you supply or a Claude Code or Codex
-CLI signed in with your own subscription, and is unavailable until one is
-configured. Hosted deployments use Azure only. See
-[bring your own AI](bring-your-own-ai.md) to set up a provider,
-and [start with the optional AI assistant](#start-with-the-optional-ai-assistant)
-to run it. Requests include active-scenario context, not just selected
-or filtered objects. [Advanced configuration](advanced-configuration.md) covers
-approved data/endpoint handling and collaboration/CLI safeguards.
-
-AI Analysis and Chat require a specific scenario in the top-bar **Scenario**
-selector. **(Show all)** displays the whole diagram but does not provide an AI
-analysis scope. Native `.tma` files preserve this view choice, so a valid model
-can reopen with Assistant actions disabled. The Assistant notice explains how
-to select a scenario, or create one through **Model > New scenario** when none
-exist. Selecting a scenario removes this notice; separate endpoint/local-mode
-restrictions still apply.
-
-Select an AI finding's heading (or **Focus**) to select and center its first
-available referenced node, flow, or boundary. Assistant keeps the current
-scenario when it contains the target; otherwise it opens a containing scenario,
-or Show all for an unassigned target. The selected finding is marked until the
-diagram selection moves away. Like Issues, an unpinned inspector follows the
-selection to Properties; pin it to keep reviewing findings. Chat reference
-buttons use the same navigation. Missing references are shown as unavailable.
-
-AI Analysis uses one scrolling area for its setup controls and results, so
-provider information cannot trap findings in a thin strip. **Go to AI findings**
-jumps past those controls. Chat keeps its own scrolling area and composer when
-space permits; in short panels its content scrolls together. Scroll or Tab
-through finding actions to reach the final result.
-
-Every AI finding has **Resolve** / **Reopen** and **Delete**, including findings
-with missing diagram references. Resolve records an **Active** or **Resolved**
-review decision; it does not fix the design or verify the AI's recommendation.
-Delete asks for confirmation and removes only that finding, not any Issues or
-Work items already created from it. Both actions support Undo/Redo.
-
-The completed findings, their statuses, classification and accepted-state
-feedback, and their analyzed scenario snapshot are saved with the model.
-Native Save/Open, autosave recovery, standalone HTML and current collaboration
-peers retain them. They remain reviewable offline without enabling AI.
-**Analyze model** replaces the saved analysis with a new set of active findings;
-Undo restores the previous review. Deleted findings can appear in a later
-analysis. **Simulate breach** uses only active findings from the current snapshot.
-Use matching current clients; older builds may discard saved findings.
-
-#### Simulate a breach path
-
-**Simulate breach**, beside **Analyze model** in AI Analysis, plays a
-suggested attack path across the active scenario's diagram to help explain a
-finding. Like AI Analysis, it needs a selected scenario and a configured
-provider. A new AI Analysis request sends active-scenario context to that
-provider; replaying existing findings does not.
-
-- If AI Analysis has a saved review for the active scenario, the simulation
-  reuses its active findings. If none are active, it asks you to run **Analyze
-  model** rather than replacing your review decisions. Without a review for
-  that scenario, it sends one AI Analysis request that asks for the most
-  plausible path from an entry point to sensitive data.
-- It takes the finding with the highest suggested severity and builds the path
-  in the browser. Starting from a flow the finding references (or else a flow
-  touching a referenced node, or else the scenario's first flow), it follows
-  connected flows upstream and downstream, up to five flows. The path is a
-  chain of declared flows near the finding, not necessarily the exact path the
-  AI described. If the scenario has no flows, only referenced nodes are shown.
-  If nothing can be shown, the panel asks you to add a connected flow.
-- The canvas zooms to the path and highlights each node and flow in turn,
-  about once a second. The panel lists the steps; select one to focus it on
-  the canvas. A step whose element has since been removed is unavailable. Use
-  **Pause**, **Resume**, **Restart** or **Close** to control playback.
-- When playback finishes, the panel names the last step under **Target
-  reached** and lists up to four **Recommended protections**, taken from the
-  recommendations of active AI findings in severity order. **Create
-  *N* work items** adds one Pending review work item per protection with only
-  its Description filled in, closes the simulation and opens Work. Add a Name,
-  type and severity before accepting them.
-
-The score beside the title, such as 76/100, is a fixed value for the finding's
-suggested severity (critical 92, high 76, medium 54, low 28), not a calculated
-risk score. Labels such as **Live attack path** and **Target reached** describe
-the animation. The path is an AI-assisted hypothesis over declared flows, not
-an observed attack, a tested exploit or proof that the target is reachable.
-The animation and playback state are not saved with the model. Work items you
-create from its protections are saved normally.
-
-#### Move the whole inspector
-
-Use the **Inspector display** selector above the inspector. It is available
-from every tab, not just Findings:
-
-- **Dock in inspector** uses the normal right-side inspector.
-- **Float in this page** moves the whole tabbed inspector over the canvas and
-  frees its docked space. Drag its title bar or focus the bar and use arrow keys
-  to move it. Drag the bottom-right handle, or focus it and use arrow keys, to
-  resize; Shift uses larger steps. It stays within the usable viewport and
-  leaves room for the bottom-left canvas controls.
-- **Open separate window** uses a normal resizable browser window, which can
-  be moved to another monitor. Keep the main SDS page open. If browser policy
-  blocks the window, the current inspector stays in place and the message offers
-  the floating alternative.
-
-These are presentations of the **same inspector**, not new app sessions or
-independent per-tab windows. Properties, Edges, Issues, Comments, Deviations,
-Changes, Data, Work and Findings remain together, with conditional tabs shown
-when applicable. Moving, resizing, switching tabs and re-docking keep filters,
-unfinished replies, edits, results, accepted-state feedback, chat draft,
-conversation and reading position without making another AI request. Escape
-from floating or separate-window content docks it; native select controls
-handle their own Escape. Closing the separate window also docks the inspector
-on its current tab. Model/Review/View commands in the main page route to this
-same inspector while it is undocked. Closing/reopening the inspector retains
-its tab drafts; presentation resets to docked when it is closed or on reload.
-
-Findings are labelled with their analyzed scenario snapshot. Navigating the
-model does not silently re-analyze them. Closing a docked inspector cancels a
-pending request but retains previous results and drafts; changing presentation
-does not cancel it. New/Open or changing collaboration rooms clears the outgoing
-conversation and draft and displays the incoming model's saved findings.
-Changing the AI provider clears the conversation and return context, but keeps
-saved findings and their review decisions. Reloading or closing the main page
-clears unsent drafts and chat and closes its separate window. Chat, drafts,
-provider preferences and navigation state are not stored in the model or shared
-through collaboration.
-
-#### Export all inspector data to Excel
-
-**Excel (.xlsx)** is available above every inspector tab in all three display
-modes, including when there are no findings or issues. It downloads
-`secure-design-studio-inspector.xlsx` with **all tabs' retained data across all
-scenarios and statuses**, regardless of selection, the current tab or filters.
-Sheets include nodes and their properties, edges and scenario-specific sequence
-numbers/request/response attachments, boundaries, scenarios and retention,
-data items, work items, comments and their replies, deviations, loaded comparison
-changes, text annotations, saved definitions, saved issues and their replies,
-and the latest completed AI findings (including unaccepted ones).
-Complete-record JSON columns preserve additional properties and metadata.
-Comparison context is recorded even when the loaded comparison has no changes.
-The workbook also includes AI analysis context/answer, references, guidance
-provenance, descriptions, recommendations and evaluator state.
-Unsent drafts are not saved model data and are not exported.
-An accepted finding may appear in both the AI findings
-sheet and the saved Issues sheet; these are distinct records, not deduplicated.
-Saved issues have review status, not an invented severity; AI findings retain
-their suggested severity and a separate Active/Resolved review status. Deleted
-findings are not exported.
-
-The export is a real `.xlsx` workbook, not HTML renamed to `.xls`. All values,
-including formula-looking strings and URLs, are text cells; there are no
-formulas, macros or external workbook links. Text beyond Excel's cell length
-limit is retained in numbered parts in a **Long text** sheet rather than
-silently truncated. Export is local and does not send an AI request.
-
-Keep the native `.tma` file for an editable model backup. The workbook is a
-review snapshot, not an import format or proof of a complete security analysis.
-
-#### Work items and Azure DevOps submission
-
-Open **Model > Work Items** or the **Work** inspector tab. Each entry has a
-**Name**, **Description**, **Work item type** (Bug or Task), **Weakness Type**,
-**Severity**, **Submission decision** and optional tracker **Link**.
-Legacy entries keep their description/link and start pending review. Choose
-**Accept** to queue work or **Reject** to exclude it; neither choice contacts
-ADO or changes an existing ADO item's lifecycle state.
-**Link** is the URL of an already-created external work item or tracker record,
-not the ADO organization/project destination. Leave it blank for new work.
-Any nonblank Link excludes that record from creating another ADO item, whether
-through direct submission or the import exports. Do not clear genuine tracker
-links or recorded results just to recreate existing work.
-In **Findings**, **Create work item** prefills the finding's Name and maps its
-severity to the matching Work severity. Expand **Work item classification** on
-the finding to choose Bug/Task and enter its Weakness Type before creating work,
-or set those fields later on the Work card. Available finding classification
-values are copied, not taken from a global template; review AI-proposed values
-like the rest of the finding. The Description retains its full
-rationale, recommended action, category, finding ID, original analyzed scenario,
-all diagram-reference labels/IDs (even if no longer available), and supplied
-guidance provenance. The draft remains **Pending review** with no tracker link;
-review/edit it before accepting and explicitly submitting. It is a snapshot:
-later analysis changes do not overwrite the authored work.
-
-For offline bulk creation, use **Export ADO CSV** in Work. It exports only
-accepted, unlinked items without submitted/in-progress/unknown results, including
-the durable browser journal. **Export ADO Excel template** produces a matching
-text-safe worksheet with blank ID, Created Date and State columns, plus the
-configured Assigned To for reference. Following Microsoft's new-item CSV
-instructions, those four columns are omitted from the creation CSV; apply
-assignment after creation. Neither action signs in, submits, or records success.
-The inspector-wide **Excel (.xlsx)** action remains the complete review snapshot,
-including pending/rejected work and submission results; it is not the import file.
-Each Work card explains whether it is selected, pending review, rejected,
-linked or protected by a recorded/uncertain ADO result. The same counts appear
-beside the export buttons. Selecting **Accept** is required even when the JSON
-template is already saved. A selected item must also have its Name, Description,
-Work item type and Severity filled in. **Weakness Type is optional for both Bugs
-and Tasks**: omitted, empty and whitespace-only values are accepted. They leave
-the CSV/XLSX cell blank and omit `Custom.WeaknessType` from ADO requests, without
-falling back to an old global default. Validation identifies the Work card number when a field
-is missing. Export failures appear beside the buttons and receive focus, including
-in an undocked inspector, rather than remaining out of view above a long list.
-Successful preparation reports the item count and prompts you to check browser
-downloads; it does not mean anything was submitted to ADO.
-
-The import template contains 16 XLSX columns and the corresponding 12-column
-creation CSV subset. Risk Rating is removed; Priority, Blocked and RootCause are
-also omitted from outgoing fields, not derived from Severity. No other defaults
-become export columns. Title, Description, Work Item Type, Weakness Type and
-Severity come from each Work item. One file can contain both Bugs and Tasks.
-The saved destination must include Inventory ID, Reviewer and nonempty
-`System.AreaPath`, `Custom.ReviewTeam` and `Custom.TeamID`
-defaults. Optional `Custom.ReviewType` may be blank. The inventory column uses
-Inventory ID; it is not Team ID. The export's Description column maps to `System.Description`.
-Missing values and an Area Path belonging to another project block export
-with a field-specific message. Correct the saved configuration rather than
-copying identities, IDs, dates, status or narrative from an existing Bug.
-
-In the configured destination project, open **Boards > Queries > Import work
-items**, choose the CSV, review Azure Boards' field/identity validation and then
-choose **Save items**. The project still enforces its required fields, valid values
-and permissions; the offline export does not verify them live. The CSV limit is
-1,000 items per file; reduce the accepted batch for larger submissions. If an
-import value exceeds Excel's 32,767-character cell limit, use CSV directly in
-Azure Boards: the import worksheet will not replace text with a Long text pointer.
-Formula-like CSV values are blocked rather than silently modified; the XLSX
-template keeps them as inert text. See Microsoft's
-[supported CSV workflow](https://learn.microsoft.com/en-us/azure/devops/boards/queries/import-work-items-from-csv?view=azure-devops).
-Its [legacy Excel add-in](https://learn.microsoft.com/en-us/azure/devops/boards/backlogs/office/bulk-add-modify-work-items-excel?view=azure-devops)
-is unsupported; the SDS workbook has no add-in connection or Publish command.
-After saving imported items, copy their tracker links back into SDS before
-exporting/submitting again. Offline imports do not create SDS submission receipts;
-never import multiple copies of the same batch.
-
-Expand **ADO configuration**. There is one **ADO configuration (JSON)** editor
-for the complete destination and its defaults, not separate form fields or a
-defaults-only box. Existing saved settings appear in this editor automatically.
-Paste the **entire** configuration object, or select **Load JSON file** to read
-the same format from disk. Loading changes only the draft; select **Save ADO
-configuration** to validate and apply it. **Download JSON** saves the validated
-editor contents to `secure-design-studio-ado-config.json` without applying them.
-
-For example (replace the sample project, identities, GUIDs and process values):
-
-```json
-{
-  "organizationUrl": "https://dev.azure.com/your-organization",
-  "project": "ExampleProject",
-  "inventoryId": "11111111-1111-4111-8111-111111111111",
-  "reviewer": "reviewer@example.com",
-  "descriptionField": "System.Description",
-  "defaults": {
-    "System.AreaPath": "ExampleProject\\Security",
-    "System.IterationPath": "ExampleProject",
-    "System.AssignedTo": "owner@example.com",
-    "System.Tags": "Security; DataSource:SecureDesignStudio",
-    "Custom.ReviewTeam": "Your review team",
-    "Custom.TeamID": "22222222-2222-4222-8222-222222222222"
-  }
-}
-```
-
-Area and iteration paths must equal `project` or belong beneath it. Write a
-single path separator as `\\` in JSON; doubled separators and foreign-project
-paths are rejected before saving. Omit an optional path property to use the ADO
-default rather than leaving its value empty. Invalid JSON, unsupported fields or
-bad paths do not overwrite saved settings. Malformed stored JSON stays available
-in the editor for repair. Unsaved edits are clearly marked and block Connect,
-Submit and ADO import exports until saved, so an old destination is not silently
-used. The inspector review snapshot and ordinary model editing remain available.
-JSON files must fit the 500,000-byte configuration limit, including formatting.
-
-Inventory ID is `inventoryId`, the GUID identifying the inventory associated
-with the work. It replaces existing `ServiceOID:` tags with one canonical tag
-while preserving other tags, and never changes `Custom.TeamID`. Reviewer is
-`reviewer`, an email/UPN mapped to `Custom.SecurityReviewer`; it is separate from
-`defaults.System.AssignedTo` and the signed-in caller. These top-level settings
-override corresponding defaults. Omit or clear them to restore the template
-behavior for generic configurations; the dedicated import export requires both.
-Configuration remains browser-profile-local, not shared with the model.
-
-Keep process-specific ADO reference names and scalar values inside `defaults`.
-There is no second configuration file or separate defaults-only editing step.
-SDS does not automatically discover native ADO team templates. Do not copy a
-source-system tag from another tool onto SDS-created work; use an accurate
-value such as `DataSource:SecureDesignStudio`.
-Name, description, type, Weakness Type and severity come from the individual
-SDS work item. Choose **Bug** or **Task**, the appropriate Weakness Type text,
-and **1 - Critical**, **2 - High**, **3 - Medium** or **4 - Low** for each record.
-Work Item Type and Severity are required for both types before export or
-submission; Weakness Type can remain blank. Legacy records keep missing values unset for explicit review;
-opening a model does not copy global Bug/weakness defaults onto its items.
-Older configuration entries for `workItemType`, `Custom.WeaknessType` and
-`Microsoft.VSTS.Common.Severity` are ignored and omitted when saving the normalized
-configuration. The retired `Custom.RiskRating`, `Microsoft.VSTS.Common.Priority`,
-`Microsoft.VSTS.CMMI.Blocked` and `Microsoft.VSTS.CMMI.RootCause` defaults are
-also removed. Original stored input is not rewritten merely by opening it.
-Mixed-type submission preflights every item, then creates each under its own
-Bug or Task endpoint. The target project must support the selected fields on
-both types; ADO still validates its process rules. Use current SDS peers
-to retain the new optional document fields.
-The top-level `descriptionField` defaults to `System.Description`. For a process
-whose Bug description uses `Microsoft.VSTS.TCM.ReproSteps`, configure that field
-instead; custom processes can specify their own supported HTML field reference.
-This mapping is separate from defaults and cannot be overridden by them.
-
-Select **Connect to Azure DevOps** to sign in with Microsoft. SDS uses its
-deployment-managed MSAL registration; you do not enter tenant or client IDs
-in the configuration JSON. The deployment administrator configures the SPA,
-exact hosted HTTPS redirect URI and delegated ADO permission once, and sets
-`VITE_ADO_TENANT_ID` and `VITE_ADO_CLIENT_ID` before building the frontend.
-If sign-in is not configured for the deployment, SDS displays a setup message
-and disables connection; authoring and export remain available.
-Connection uses interactive sign-in/consent
-when necessary; no PAT, client secret or copied host token is entered into SDS.
-An existing browser session does not guarantee silent authorization. Connect
-from the docked or floating inspector in the main SDS window.
-The HTTPS host must also provide the same-origin `/api/ado-work-items` relay
-with `SDS_ADO_RELAY_ENABLED=1`. It forwards only the caller's short-lived ADO
-token and never uses a service identity or stores credentials. Pure static
-hosting without that API does not support submission; the relay is disabled
-by default and is not started by local development.
-This uses your delegated ADO token, not a backend OAuth OBO token exchange.
-Old profile registration IDs are ignored and removed on the next explicit
-configuration save; destination and template values are preserved.
-
-**Submit accepted** confirms the destination and eligible count, validates
-every queued item against ADO before creating anything, then reports individual
-results. Pending, rejected, already linked and previously submitted work is
-excluded. Configuration is browser-profile-local, not included in `.tma` or
-shared with collaborators. Ordinary local development and file-opened standalone pages
-support authoring/export but disable ADO authentication and submission.
-For explicitly connected localhost use, an administrator must configure an SDS
-SPA registration with redirect URI `http://localhost:5173/` and supply
-`VITE_ADO_TENANT_ID` and `VITE_ADO_CLIENT_ID` in the launch environment or an
-untracked `.env.ado.local` file. Stop the ordinary development server and run
-`npm run dev:ado`, then open `http://localhost:5173/`. Missing settings stop
-startup with a setup message. This mode enables only user-initiated ADO
-connection/submission through a loopback-only adapter; collaboration and AI
-remain disabled, and no separate Function host is started. Normal
-`npm run dev` remains offline-safe and does not use these registration values.
-The registration is still required: MSAL cannot borrow Copilot's or another
-website's application identity. A restart is required to change modes.
-
-A timeout can leave an **unknown** outcome even if ADO created the item. Check
-ADO; SDS blocks automatic retries of uncertain work. The browser's durable
-submission journal survives Undo and reload, but does not coordinate other
-browsers or collaborators: designate one submitter. Do not clear browser data
-to bypass this guard. Undo/deleting an SDS entry does not delete external work.
-When an older opened file is missing a journal result, use **Keep recorded result
-in model** to retain its displayed receipt/link before saving or exporting; this
-does not create another ADO item.
-Keep the native file and export **Excel (.xlsx)** after submission to capture
-saved names, individual severities, decisions, ADO IDs/links and results. Export creates a new review
-snapshot; it does not update a previously downloaded workbook.
-
-Drag the Chat text box's bottom-right handle to resize it vertically. Its height
-is bounded to preserve space for the rest of the panel; longer text scrolls
-inside the box. Resizing does not enable AI in credential-free local mode.
-
-## 5. Analysis and review
-
-### Deployment-selected Custom Libraries
-
-**Model > Custom Libraries** shows explicitly selected packages, their catalogs,
-metadata fields, declarative checks and help, plus any missing/rejected package
-diagnostics. About and the status bar summarize the same set. No package is
-selected automatically, and this is not an internal/public mode or access grant.
-Current built-in content remains present in this checkpoint. See
-[Custom Libraries](custom-libraries.md) for selection, portability and trust rules.
-
-### Use the deterministic review loop
-
-**Review > Analyze** runs local rules across the **whole document**, not only
-the visible scenario. It propagates request data to targets and response data
-to sources in every scenario, then opens Issues. Rules cover missing data,
-retention information, authentication compatibility, required caller
-Application IDs, communication profile guidance, receiver data policy and
-deferred instance values. Legacy Production identity findings remain visible
-as retired historical evidence; they are not silently converted into active
-caller IDs.
-Any required inventory-value check is supplied only by the selected Custom
-library; core does not require an Inventory ID.
-
-Open a finding to locate its target, correct the model, and Analyze again.
-Still-triggered findings keep their ID, status, replies and creation time.
-Findings no longer triggered are removed, not archived, **only after their
-rule completely evaluates the affected target**. Manual issues/comments are
-untouched. Save a review snapshot if you need its history.
-
-If a finding's rule or required policy definition is unavailable, Analyze
-retains its original evidence, scenarios, guidance and review status, and
-labels it **Not re-evaluated**. This includes missing/unspecified node policies
-and unknown or unverified authentication semantics used for production-identity
-checks. Display-only classification labels are not policy requirements:
-explicit ID-based acceptance rules remain evaluable without a label library.
-For partial coverage (for example, only one flow direction has a known receiving
-policy), an existing finding is kept whole rather than narrowed. New definite
-violations can still be reported, with the same incomplete-coverage warning.
-Restore the required rules/definitions and Analyze again to refresh or clear
-them. Removing the affected target still removes its findings.
-
-The warning appears in both issue lists and review reports and survives native
-Save/Open, Undo/Redo, autosave and standalone HTML. Search Issues for
-`not re-evaluated` to locate retained findings. A legacy file without a warning
-does not establish freshness or complete coverage. Unknown evaluation metadata
-gets an explicit unrecognized-state warning rather than being treated as success.
-Use matching current readers for collaboration: older builds can drop this
-metadata or clear unavailable findings. Analysis does not execute rules from a
-model, and this version keeps every existing installed rule enabled.
-
-**Review > Issues** has All, Active, and Resolved views. Resolution records
-a decision, not a fix or proof of complete evaluation. An evaluator failure
-reports an error without changing the model, findings or Undo/Redo history.
-Core issues have status, not severity; AI Analysis
-suggests critical/high/medium/low findings for human assessment.
-
-Authentication definitions carried by a model do not install a required
-library. If their behavior conflicts with the installed contract, the original
-metadata is retained with an unavailable warning rather than used to clear
-findings. Review the versions in **Model > Customize authentication** and use
-the explicit, undoable definition-adoption action when appropriate.
-
-Use **Review > Comments** for scenario-scoped discussion and **Model > Work
-Items** for follow-up descriptions/tracker links, not external tracker
-synchronization.
-
-Use **Review > Deviations** for evidence-backed exceptions found while
-reconciling the model with deployed-service evidence. A deviation can
-optionally point to a node or edge, but remains in the document if that target
-is later removed. Stable keys let repeated evidence reviews update the same
-record instead of creating duplicates. Every deviation requires an
-explanation. In the UI, existing deviations are retained: you can revise their
-explanation, but cannot delete them or change their Active or Resolved status.
-Status changes made by evidence tooling or present in imported files remain
-visible and do not alter the diagram topology. Network endpoint deviations can
-include representative observed calls; choose **View sample calls** to review
-their source, sanitized destination, and observed count.
-
-### Compare models and assess the limits
-
-**File > Compare to previous** (also under Review) loads a `.tma` or compatible
-JSON baseline without replacing the working model. Open **Review > Changes**
-to inspect differences; **No changes** is a valid result. Compare is a user
-model feature, not a source-code regression check.
-
-Unknown/Unspecified policy and unsupported metadata need review even without
-a finding. Verify direction, order, boundaries, classification, and actual
-configuration separately; Analyze does not inspect deployments or scan live CVEs.
-
-Review AI evidence before **Create issue / Create work item**; severity does
-not carry into ordinary issues. Persist decisions as issues/comments rather
-than relying on transient chat.
-
-Before sharing, confirm membership, auth/identity, directional data/retention,
-boundary/lifecycle assumptions, and open actions. Analyze and save a named `.tma`.
-
-## 6. Using sequence view
-
-Sequence is another view of the same model, useful for walking a reviewer
-through calls in order.
-
-1. Select **Submit a support case** in the scenario selector and clear filters
-   if you want the complete workflow. Choose **View > Sequence**.
-2. Read participants across the top, in order of first appearance. Only nodes
-   involved in visible flows appear. Read calls top to bottom: a solid arrow
-   shows direction, sequence number, title, and auth.
-3. Follow the dashed **return** arrows. For Support web > Support API >
-   Case store, the view shows Submit case, Store case, the return from Case
-   store, then the return to Support web. Returns are inferred from call
-   order, not stored flows or observed timing.
-4. Click a participant or call/return row to select its underlying node or
-   edge. Use **View > Properties** to edit it; call/return rows select the
-   same flow. Edit request/response attachments under **Privacy**.
-5. To reorder, open **View > Edge list**. Use **Move up / Move down** or drag
-   a row before/after another row. Double-click a row for Properties, where
-   **Sequence # (in scenario)** also moves it. These operations renumber the
-   active scenario sequentially; they do not change another scenario's order.
-6. Return through **View > Diagram**. Both views share edits and ordering;
-   no conversion is needed.
-
-Response attachments describe the payload going back to the source. Adding
-them does **not** create another call; dashed returns are inferred even
-without response data. Self-calls use a curled arrow without a separate return
-row. Multiple same-direction flows between the same pair remain distinct
-ordered calls, not a claim that they execute concurrently.
-
-You cannot drag participants or arrows to reorder in Sequence itself. Use the
-Edge list or Sequence # field; layout/routing edits belong in Diagram.
-
-## 7. Import and export
-
-**Save a native `.tma` first.** External formats are interchange or review
-outputs, not full-fidelity backups.
-
-**File > Save** and **File > Save as > SecureDesignStudio model (.tma)** use
-the browser save picker or fall back to a filename dialog/download. Open adopts
-the filename for later suggestions. Save is not a background write.
-**File > Open** replaces the document; **Compare to previous** does not.
-
-Saved classifications, production-identity tenants, boundary subtypes, and
-deviation kinds can reference definitions this build does not have. Valid
-identifiers are retained and displayed as **(unresolved)** instead of being
-silently replaced. This does not install a library or verify the definition.
-See [unavailable catalog references](model-compatibility.md) for limits.
-Models can also carry [saved catalog definitions](catalog-snapshots.md) so their
-labels/descriptions remain available without installing a library. The saved
-definition wins for that diagram; the disclosure below the command bar shows
-its provenance and any difference from installed labels.
-
-| Format | Direction and command | What to expect |
-|---|---|---|
-| Native `.tma` / compatible JSON | File > Open; Save / Save as | Editable document/view state; current version-2 and supported legacy wrappers or bare models. Not all browser preferences or the whole Authentication Library. |
-| Threat Modeling Tool `.tm7` | File > Import; File > Save as | Import replaces the model. Export makes a drawing surface per scenario with generic nodes, flows, and security boundaries. Not full fidelity; see losses below. |
-| Scenario/DFD JSON | File > Import > Import JSON format | Import only; requires the supported `scenarios` and `dfds` structure, not arbitrary JSON. Replaces the model; summary reports skipped annotations/edges and empty scenarios. No export to this format. |
-| PMEXP inventory `.pmexp` | File > Import > PMEXP import | Import only; locally merges data/retention into mapped or created nodes. Requires scenarios. Unique saved inventory-ID matches import immediately; others need mapping. Unknown classifications become Other. |
-| Endpoint `.txt` | File > Import > Endpoints text; Model > Endpoint matching | Import only; adds nodes for matched types missing from the document, in the active scenario. No call inference/service scan. Unmatched lines download as `_unknown.txt`. |
-| Visio `.vsdx` | File > Save as > Microsoft Visio | Export only; one page per scenario, node/type/inventory labels, classification-labeled flows, and privacy boundaries. Security boundaries are omitted. No VSDX importer. |
-| Diagram `.png` | Export > Diagram image | Export only; requires an active scenario and nonempty Diagram view. Captures the rendered shapes, icons, curved flows, labels, boundaries, annotations, theme and grid at twice diagram resolution, including offscreen content in the current filters. A picture, not an editable model. Very large views require filtering or a smaller scenario. |
-| Review report `.html` | Export > Review report | Export only; active-scenario report, optionally with a Diagram-view image. Not a runnable app or import format. |
-| Standalone `.html` | File > Save as > Standalone HTML | Export only from a single-file build. App + native model; open in the browser, not File > Open. May have network features. |
-| Node-catalog JSON | Model > Node Type Catalog > Import / Export | Moves document-local type definitions and referenced authentication dependencies, not the whole diagram. |
-| Authentication-catalog JSON | Model > Customize authentication > Import / Export | Profile library with explicit import preview, not a diagram; saved conflicts remain. No repository JSON writes. |
-
-### Supported scenario/DFD JSON import
-
-**File > Import > Import JSON format...** converts a local `.json` file in the
-supported scenario/DFD structure. JSON is an encoding, not one universal model
-format: this command does not accept arbitrary JSON, native `.tma`/model JSON
-or PMEXP inventory records. Use **File > Open** for native models and the
-separate import commands for TM7 and PMEXP.
-
-The source format originates from Threat Modeling Copilot (TMC) scenario/DFD
-exports. The converter operates locally without sign-in, portal access,
-acquisition tooling or a Custom Library. The rename preserves source field
-names and stable identifiers; it does not define a new schema.
-
-The top-level `scenarios` object must contain a `threatModel` object with a
-`scenarios` array. The top-level `dfds` object must contain an `items` array.
-Each scenario's string `id` is matched to `items[].diagram.id`, not to array
-position. For example, using synthetic data only:
-
-```json
-{
-  "scenarios": {
-    "threatModel": {
-      "scenarios": [{"id": "scenario-example", "name": "Example flow"}]
-    }
-  },
-  "dfds": {
-    "items": [{
-      "diagram": {
-        "id": "scenario-example",
-        "nodes": [
-          {"id": "node-client", "type": "externalinteractor", "label": "Client", "position": {"x": 100, "y": 100}},
-          {"id": "node-api", "type": "process", "label": "API", "position": {"x": 400, "y": 100}}
-        ],
-        "edges": [
-          {"id": "edge-request", "source": "node-client", "target": "node-api", "label": "1. Request"}
-        ]
-      }
-    }]
-  }
-}
-```
-
-Supported source shapes include `process`, `datastore`, `externalinteractor`,
-`boundary` and `freetext`. Nested boundary positions are relative to their
-parent and are converted to absolute coordinates. Boundaries become security
-boundaries; source shape categories do not assign policy-bearing node types.
-Repeated source IDs retain stable model IDs, while distinct same-label nodes
-stay distinct. Multi-numbered flow labels become separate ordered edges;
-continuation lines become descriptions. This does not infer authentication
-or data classifications from flow text.
-
-The command confirms replacement when a diagram has content. Declining the
-confirmation, cancelling the file picker, or rejecting an unsupported format
-leaves it unchanged. A successful import is one undoable replacement.
-The scenario/DFD JSON importer reports free-text annotations it does not yet map,
-unresolved edges, scenarios without diagrams and unmatched diagrams.
-Scenarios without diagrams remain empty; unmatched diagrams do not create
-scenarios. Save a native `.tma` to preserve the converted model.
-
-### PMEXP inventory import
-
-**File > Import > PMEXP import...** reads a local `.pmexp` data-inventory file.
-It does not connect to a portal, download an inventory, sign in, or query
-services. No optional library is required. The format originates from Privacy
-Manager; this command retains its existing source fields and parsing behavior,
-not an arbitrary JSON importer. Native model JSON belongs under **File > Open**.
-
-The file contains either an array of inventory records or an object with a
-top-level `data` array. For example, using synthetic data only:
-
-```json
-{
-  "data": [{
-    "serviceId": "11111111-1111-4111-8111-111111111111",
-    "serviceName": "Example service",
-    "elementName": "Example record",
-    "sampleData": "SYNTHETIC_ONLY",
-    "dataClassification": "Customer Data",
-    "dataRetainDuration": "7 days",
-    "dataStoreBoundary": "Stored"
-  }]
-}
-```
-
-Records without a nonempty `serviceId` are ignored. Missing descriptive fields
-retain the parser's existing defaults. Optional `storeDependency`,
-`processDependency` and `downstreamDependency` fields retain the existing
-service-reference expansion; they do not trigger remote lookups.
-
-The importer compares each source `serviceId` with the saved node inventory
-identifier (`serviceTreeId` in model JSON), ignoring surrounding whitespace
-and letter case. A unique match merges automatically. Missing or duplicate
-matches open **PMEXP import**, where each service can create a node, map to a
-chosen existing node, or be ignored. Create all/Ignore all affect unmapped
-services only; mapping to an existing node requires selecting it.
-
-The import merges into every scenario, reuses matching name/classification
-pairs, preserves nonempty samples and existing retention assignments, and
-reports created/reused/skipped counts. Cancel leaves the model unchanged;
-Undo reverses the whole import in one step. Original source-provenance
-descriptions on created nodes remain unchanged for compatibility.
-
-Endpoint import always includes generic local-file instructions. If the deployer
-selected a library with endpoint guidance, the dialog also displays its
-instructions/example and the contributing package's identity. Copying the
-example does not run it. Without that library, Choose file and matching work
-normally; the app does not discover telemetry services or prompt for sign-in.
-
-TM7 export omits privacy boundaries, data/retention, much metadata, and
-issues/threats. Auth labels/ID lines preserve this build's identifiers, not
-definitions/behavior; custom methods reopen unresolved. TM7 imports leave node
-policy types blank. Standard GE.A free text is preserved as canvas annotations.
-Explicitly unattached connectors are omitted with an individual warning and
-their nonempty labels preserved as annotations; nonzero broken references fail.
-Line boundaries and unsupported properties remain disclosed losses.
-
-### Canvas text annotations
-
-Choose **Model > New text annotation**, or right-click the canvas and choose
-**New text annotation**. These notes explain a drawing without creating a
-process, data flow, data element, review comment or policy target. They have no
-connection handles, sequence lifelines, authentication or data propagation.
-
-Select a note (double-click to open Properties), enter complete plain text,
-then choose **Apply text**. One Apply is one undoable edit; **Discard text
-edits** restores the saved value. Drafts survive inspector tab switches; apply
-before changing the selected note or closing its editor. Drag to move, use the
-selected resize handles, or edit position/size in Properties. Keyboard users
-can focus the note, press Enter to edit, or use arrows (Shift for larger steps)
-to move. Delete removes the selected note; Ctrl+Z restores it.
-
-Properties and the context menu manage scenario membership. Duplicating a
-scenario shares the note; edits appear in every included scenario. Removing
-membership retains the note in Show all. Deleting a scenario also deletes
-notes used only by that scenario, while shared and already-detached notes stay.
-Sequence view lists scenario notes separately from participants.
-
-Native `.tma`, autosave, portable HTML and current collaboration peers preserve
-text, placement, size and membership. Compare reports edits and navigates to
-the note. Review HTML contains complete escaped text and geometry; PNG is a
-visual rendering, not a backup. TM7 uses standard GE.A rectangles with the
-[documented geometry mapping](tm7-compatibility.md#free-floating-text).
-VSDX does **not** map these notes and warns before exporting.
-
-Older application/CLI versions can discard optional annotation data or scenario
-membership: do not edit these models with older clients. No compatibility
-marker can retrofit protection into an old reader. Current CLI reads preserve
-annotations on unrelated mutations but do not provide annotation authoring.
-The current app treats New, Open and history restoration as complete document
-state: replacing a model with a legacy or empty model removes its previous
-annotations from the room. The compatibility adapter preserves absent annotation
-fields for partial legacy callers, not for deliberate current-app replacement.
-Ordinary Undo/Redo clears selection; reselect a note to reopen its saved text.
-The browser text editor displays CR/CRLF as line breaks. Untouched/no-op edits
-retain the exact source text; real edits retain a uniform source newline style.
-Editing mixed newline styles uses the browser's LF representation.
-Optional Assistant requests include notes only as untrusted authored context,
-never instructions; creating/importing notes makes no model-service request.
-Reassign types and review the summary and
-[auth compatibility](authentication-library.md#stable-semantics-and-compatibility-limits).
-
-After opening VSDX in Visio, use **Position > Auto Align & Space** as prompted.
-New exports regenerate document properties instead of copying the template's
-author/company/custom metadata or stale thumbnail. The template's required
-BSD-3-Clause notice travels in the VSDX properties and is readable in the app
-under **About > Visio template notice**. See
-[third-party provenance](third-party-notices.md); that component notice is not
-a license for the entire application.
-Artifact retrieval from source systems has separate access requirements.
-Local handlers do not upload files, but imported edits synchronize when in a room.
-
-Keep versioned `.tma` and separate library JSON backups. Autosave can fail,
-is profile/origin-specific, and does not update HTML on disk. Embedded HTML
-models take precedence when reopened. See
-[browser recovery](advanced-configuration.md#browser-recovery) before clearing storage.
-
-## 8. Troubleshooting and quick reference
-
-| Problem | Action |
+Now build **Submit a support case** again, this time using AI. Keep the manual
+version so you can compare the two.
+
+**Before you start, complete the AI connection.** Follow
+[Start with the optional AI assistant](#start-with-the-optional-ai-assistant)
+and [Bring your own AI](bring-your-own-ai.md) to configure your chosen provider
+and confirm it is available. Ordinary `npm run dev` disables AI; you must use
+the appropriate AI-enabled startup. If you have not connected a provider, skip
+this exercise for now. Your manual model still works without AI.
+
+1. **Keep your manual model.** Save it as `support-case.tma` before changing
+   startup modes or creating another model.
+2. **Start a separate model.** In the AI-enabled app, choose **File > New**
+   and confirm replacement if asked. Enter `Submit a support case` in
+   **Create your first scenario**, then choose **Create**.
+   This gives AI an empty scenario without changing your saved manual file.
+3. **Ask AI to build the sample.** With **Submit a support case** selected in
+   the top **Scenario** dropdown, choose **File > Design with AI**.
+   Paste this prompt into the **Threat Model Designer** and press Enter:
+
+   ```text
+   Build a fictional "Submit a support case" workflow for a training exercise.
+   Create exactly three nodes:
+   - Support web: App Service app.
+   - Support API: App Service app.
+   - Case store: Storage account.
+
+   Add these calls in this order:
+   1. Support web to Support API, titled "Submit case", using HTTPS and Entra user.
+   2. Support API to Case store, titled "Store case", using HTTPS and Managed identity.
+
+   Create one data item called "Case text", classified as Customer Content.
+   Attach it as request data on both flows. Do not include real customer samples.
+
+   Put Support API and Case store inside a security boundary named
+   "Support service", with Azure as its subtype.
+   Put those same two nodes inside a privacy boundary named
+   "Case data region", with Geo boundary as its subtype.
+   Leave Support web outside both boundaries.
+
+   Explain the fictional assumption that the API processes case text and the
+   store keeps it in the same approved region, managed by our team.
+   Do not invent application IDs or claim any resources or controls are deployed.
+   ```
+
+4. **Check the generated diagram.** When AI finishes, look for the three named
+   nodes, two correctly directed flows, and two boundaries.
+   Select each flow and open **Properties > General / Security** to check
+   HTTPS and its authentication method. In **Privacy**, check that `Case text`
+   is attached under **Data in request** on both flows.
+   AI can make mistakes; do not assume the prompt was followed exactly.
+5. **Correct anything missing.** Use the same Designer dialog for a specific
+   follow-up, for example:
+   `The Store case flow is missing Case text in its request data. Attach the
+   existing Case text item to that flow; do not create another data item.`
+   You can also edit the diagram manually. Each applied AI response is one
+   Undo step. Choose **Collapse** to make more room for checking the canvas.
+6. **Complete retention and the explanation.** Select Support API and set
+   `Case text` retention to **Processing only (no storage)** in **Privacy**.
+   On Case store, choose **Storage ≥ 48 hours**.
+   AI-added request data should already appear on the receiving nodes; if
+   needed, choose **Review > Analyze** to populate their privacy inventories.
+   New retention entries start as **Not specified** until you choose a value.
+   Right-click `Submit case`, choose **Add new comment**, and post the same
+   fictional boundary explanation used in step 6 of the manual walkthrough.
+7. **Arrange, review, and save.** Select **Optimize**, then choose
+   **Review > Analyze** and read the remaining Issues.
+   Choose **File > Save as > SecureDesignStudio model (.tma)** and save
+   `support-case-ai.tma`. Do not overwrite `support-case.tma`.
+   To compare the two models, choose **File > Compare to previous** and select
+   your manual `support-case.tma`, then open **Review > Changes**.
+
+**AI output is a proposal, not evidence of a deployed system.** These settings
+and explanations remain practice assumptions. AI does not deploy resources or
+discover your services.
+
+The Designer shows which configured endpoint receives your prompt and model
+context. Generated model content is saved in `.tma`; the chat and unfinished
+prompt are not. **Stop generating** or closing the dialog cancels a pending
+request. Switching models or scenarios clears the conversation.
+**Review > Design Assistant** is the separate chat and analysis experience,
+not the command used to build this sample.
+
+<a id="6-using-sequence-view"></a>
+
+## 4. Walk through the calls in sequence
+
+Use the **same support-case model you just built** to explain what happens
+when a user submits a case.
+
+1. **Open Sequence.** Select **Submit a support case** in the top **Scenario**
+   dropdown, choose **Filter > Clear all**, then **View > Sequence**.
+2. **Find the three participants.** Across the top, look for Support web,
+   Support API, and Case store.
+3. **Follow the request.** Read `Submit case` from Support web to Support API,
+   then `Store case` from Support API to Case store. Check the call numbers:
+   Submit case should be first and Store case second.
+4. **Follow the returns.** The dashed arrows show the return from Case store
+   to Support API, then the return to Support web. These are drawn from call
+   order; they do not prove real response timing or require separate flows.
+5. **Inspect a call.** Click the `Store case` call and choose **View > Properties**.
+   Check its HTTPS and Managed identity settings. In **Privacy**, find
+   `Case text` under **Data in request**. Clicking its dashed return selects
+   the same flow; response data, if recorded, belongs under **Data in response**.
+6. **Correct the order if needed.** Choose **View > Edge list**.
+   If Store case is before Submit case, select Submit case and use **Move up**
+   until it is first. Return to **View > Sequence** and check the order.
+   If it was already correct, leave it unchanged.
+7. **Return and save.** Choose **View > Diagram**. Your three nodes and two
+   flows are the same model, not a converted copy. Use **File > Save**.
+
+Now review the design and record any questions in section 5.
+
+<a id="5-analysis-and-review"></a>
+
+## 5. Review the support-case design
+
+Continue with the **Submit a support case** model from section 3. You can use
+the manual version or the AI-built version. This exercise checks the same
+two calls and records a question that a real service owner would need to answer.
+
+### Check the sample with Analyze
+
+1. **Select the workflow.** In the top **Scenario** dropdown, choose
+   **Submit a support case**. Choose **Filter > Clear all** so you can see
+   all three nodes and both flows.
+2. **Run the local checks.** Choose **Review > Analyze**. The Issues inspector
+   opens with the results. This needs no AI connection and checks the whole
+   document, not just what is visible.
+3. **Read any issues.** Open an issue and use its explanation to find the
+   affected node or flow. Results depend on your saved settings and libraries:
+   there is no fixed number of issues for this sample. Missing application IDs
+   or unreviewed service policies may still need attention.
+   **Not re-evaluated** means the app could not check that concern, not that it
+   passed. Do not invent real values to remove a warning.
+4. **Check the two calls yourself.** Select `Submit case` and open
+   **Properties > General / Security**: it should use **HTTPS** and
+   **Entra user**. Select `Store case`: it should use **HTTPS** and
+   **Managed identity**. In each flow's **Privacy**, check `Case text` under
+   **Data in request**.
+5. **Check retention.** Select Support API and open **Privacy**:
+   `Case text` should be **Processing only (no storage)**.
+   On Case store it should be **Storage ≥ 48 hours**.
+   Correct any differences, then choose **Review > Analyze** again.
+
+No issues does not prove the fictional design is secure. Analyze checks what
+you recorded; it does not inspect deployed resources.
+
+### Record a review question and follow-up
+
+1. **Add a question to the storage call.** Right-click the `Store case` flow
+   and choose **Add new comment**. In **Write a new comment…**, enter
+   `For a real service, who approves how long case text is kept, and how is it
+   deleted?` Click **Post**, then close the dialog.
+2. **Find the question again.** Choose **Review > Comments**. Look for your
+   comment on `Store case` in **Submit a support case**. This discussion stays
+   with the scenario and flow.
+3. **Create a follow-up item.** Choose **Model > Work Items**, then
+   **+ Add work item**. Set **Name** to `Confirm case-text retention`,
+   **Description** to `Ask the service owner to confirm the retention period
+   and deletion process for Case store`, **Work item type** to **Task**, and
+   **Severity** to **3 - Medium** as a fictional exercise choice.
+   Leave **Weakness Type** and **Link** blank, and leave the submission decision
+   as **Pending review**. You are recording work, not sending it to Azure DevOps.
+4. **Save your review.** Use **File > Save** to keep the comments, work item,
+   and corrected settings in your current `.tma`.
+
+### Optional: review the same sample with AI
+
+Continue with **Submit a support case**. You must complete the AI connection
+from section 3 before running this review. The CSV and Excel exercises below
+also work with the manual work item you created earlier if AI is unavailable.
+
+#### Run the AI review
+
+1. **Select the sample.** Choose **Submit a support case** in the top
+   **Scenario** dropdown. Do not choose **Show all**.
+2. **Run AI Analysis.** Choose **Review > Design Assistant**, switch to
+   **AI Analysis**, and click **Analyze model**. Wait for the findings to appear.
+   This sends the scenario context to your configured provider; it is not the
+   offline **Review > Analyze** command.
+3. **Save the completed review.** Choose **File > Save**. Save again after
+   recording your decisions. Running AI Analysis again replaces the current
+   AI results, so finish this exercise before requesting another analysis.
+
+AI results vary. The example concerns below help you understand the controls;
+they are not promises that AI will return those findings.
+
+#### Use the STRIDE view
+
+1. **Open the combined review.** Choose **Review > Findings**.
+   Set **Scope** to **Current scenario**, **Source** to **All sources**, and
+   **Status** to **Needs attention**.
+2. **Read the STRIDE evidence table.** Rows group concerns by threat category.
+   Columns show where the evidence came from: **AI analysis**, **Analyzer rules**,
+   **Saved notes / issues**, or **Service-model deviations**.
+   Use these sample questions to understand the rows:
+
+   | STRIDE row | Question for the support-case example |
+   |---|---|
+   | Spoofing | Could someone submit a case while pretending to be another user? |
+   | Tampering | Could someone change another user's case text? |
+   | Repudiation | Can the owner trace who submitted or changed a case? |
+   | Information disclosure | Could an unauthorized person read case text? |
+   | Denial of service | Could oversized submissions overwhelm Support API? |
+   | Elevation of privilege | Does the API's managed identity have more storage permissions than it needs? |
+   | Unclassified | Is there a concern that has not been mapped to a STRIDE category? |
+
+3. **Open a group of findings.** For example, if **Information disclosure**
+   has a nonzero number in the **AI analysis** column, click that number.
+   The list below changes to **Matching findings** for that category and source.
+   If it is zero, choose another nonzero count; do not assume zero means safe.
+   If the table is collapsed, click **Show STRIDE evidence** first.
+4. **Inspect one finding.** Read **Why** and **Next**, then click **Details**
+   to read the complete finding. Clicking the card's heading instead selects
+   and centers its referenced component on the diagram.
+   Use the inspector's pin control if you want to keep Findings open while
+   selecting diagram objects.
+5. **Return to the full list.** Return from Details using the onscreen Back
+   control, then click **Clear** beside the selected category/source above
+   Matching findings. This clears the chosen table count, not the findings.
+
+One finding can belong to more than one STRIDE row, so adding all row counts
+can count it more than once. The table organizes evidence; it does not verify
+that a threat exists or that the design is secure.
+
+#### Accept a useful finding and create work
+
+Suppose AI raises a concern such as **"Case store access needs review"**.
+You agree that the owner should confirm who can read or change case text.
+
+1. **Choose a useful AI finding.** In Findings, open its **Details** and expand
+   **Work item actions**. If that exact example is absent, use another relevant
+   finding from your results.
+2. **Classify the follow-up.** Set **Work item type** to **Task**.
+   Leave **Weakness Type** blank for this exercise.
+3. **Create the work item.** Click **Create work item**.
+   SDS marks the AI finding accepted and opens the new item in **Work**.
+   Accepting means you chose to act on the concern; it does not mean it is fixed.
+4. **Edit the new Work card.** For this practice task, set **Name** to
+   `Review Case store access` and **Description** to
+   `Confirm who can read and change case text, and whether Support API has only
+   the storage permissions it needs.`
+   Check **Work item type** is **Task**. Review the copied AI severity and choose
+   **3 - Medium** as a fictional exercise value. Leave **Link** blank because
+   no external tracker item has been created.
+5. **Accept the work for export.** On that Work card, set **Submission decision**
+   to **Accept**. This is a separate decision from accepting the AI finding.
+   It selects the work for export or later submission; it does not contact ADO.
+   Leave the earlier `Confirm case-text retention` item **Pending review** if
+   you want this export to contain only the new task.
+6. **Save.** Use **File > Save** to retain the finding decision and work item.
+
+Alternatively, **Create issue** accepts an AI finding as a saved diagram issue.
+Use it when you want an issue rather than a Work item. Choose your action before
+accepting: creation actions are disabled once that finding is accepted.
+**Resolve** is different again: it records a review decision that the concern
+has been addressed. Creating work alone is not a reason to resolve it.
+
+If you skipped AI, use the earlier **Confirm case-text retention** Work card
+instead: check its Name, Description, Task type, and severity, leave Link blank,
+and set **Submission decision** to **Accept**.
+
+#### Delete an unwanted AI finding
+
+For example, AI may repeat the same concern twice. Read both before deleting one.
+
+1. **Keep the useful record.** Choose **Review > Findings** and set **Source**
+   to **AI analysis** so you are acting on an AI finding, not a saved issue.
+   Set **Status** to **All statuses** if needed.
+2. **Delete only the duplicate.** On the unwanted finding, click **Delete**.
+   Read the confirmation and confirm only if you intend to remove that finding.
+   It disappears from the list. If no finding should be removed, skip this step.
+3. **Practice recovery if you wish.** Click the app's **Undo** to restore the
+   deleted finding, or leave it deleted and save your decision.
+
+Deleting an AI finding does not delete an Issue or Work item already created
+from it. It can appear again in a later AI analysis.
+Do not delete a concern merely because the diagram labels a control as present;
+the label alone does not prove the control is implemented.
+
+#### Export the accepted work as CSV
+
+This exercise prepares a file locally. **Do not connect, submit, or import
+fictional training work into a real ADO project.**
+
+1. **Open Work.** Choose **Model > Work Items**.
+   Check your chosen task is **Accept**, has Name, Description, Task type,
+   and Severity filled in, and has no Link. Pending, rejected, linked, or
+   previously submitted/uncertain items are excluded.
+2. **Set the export configuration.** Expand **ADO configuration**.
+   If you already have a saved destination, do not overwrite it for this demo.
+   If the editor has no configuration, paste the fictional training example
+   below into **ADO configuration (JSON)**, then click **Save ADO configuration**:
+
+   ```json
+   {
+     "organizationUrl": "https://dev.azure.com/example-training",
+     "project": "SupportCaseDemo",
+     "inventoryId": "11111111-1111-4111-8111-111111111111",
+     "reviewer": "reviewer@example.com",
+     "descriptionField": "System.Description",
+     "defaults": {
+       "System.AreaPath": "SupportCaseDemo",
+       "System.Tags": "Training; DataSource:SecureDesignStudio",
+       "Custom.ReviewTeam": "Training review team",
+       "Custom.TeamID": "22222222-2222-4222-8222-222222222222"
+     }
+   }
+   ```
+
+   These values only let you practice preparing a file; they do not create or
+   verify an ADO destination. The export needs an inventory GUID, reviewer,
+   area path, review team, and team ID. This inventory GUID is separate from
+   the three node asset labels used earlier.
+   For real work, obtain the correct settings from your administrator; see
+   [ADO configuration](advanced-configuration.md#work-items-and-azure-devops-submission).
+3. **Export.** Click **Export ADO CSV**.
+   Look beside the export buttons for the prepared-item count or an error.
+   If it reports a missing field, correct that Work card or the configuration
+   and try again.
+4. **Find the file.** Open your browser's Downloads (Ctrl+J on Windows) and find
+   `secure-design-studio-ado-import.csv`. For this exercise, expect one task
+   row if only your chosen task is accepted and eligible.
+   Open it in a text editor to check the title and description.
+
+CSV export does not submit work or record an ADO success.
+For real, approved work, Azure Boards imports the CSV through
+**Boards > Queries > Import work items**; review validation before saving.
+After creation, record each item's tracker Link in SDS to avoid duplicate work.
+Do not import this fictional file.
+
+#### Open the ADO Excel template
+
+The following viewing steps use **Microsoft Excel installed on Windows**.
+SDS can export without Excel installed. XLSX is not Windows-only: the files
+can also be viewed in Excel on macOS or Excel for the web.
+
+1. **Export the same accepted task.** In Work, click **Export ADO Excel template**.
+   Find `secure-design-studio-ado-import.xlsx` in your browser's Downloads.
+2. **Open it in Excel.** Open the downloaded file with Microsoft Excel.
+   Select the **ADO import** worksheet using the sheet tabs at the bottom.
+   Find `Review Case store access` (or your retention task) in **Title**.
+   Check Description, Work Item Type, Severity, and the configured destination
+   fields. You should see the same accepted task as in the CSV.
+3. **Check the blank fields.** **ID**, **Created Date**, and **State** are blank
+   because no ADO item has been created. **Assigned To** is blank in the training
+   configuration above; a real saved configuration may provide it for reference.
+   The creation CSV omits those four columns.
+4. **Read Import instructions.** Select that worksheet for the file's usage
+   notes. This workbook is for preparing and reviewing ADO rows; it has no
+   connected Publish button. Opening or editing it does not submit work or
+   update the SDS model.
+
+#### Export and read the complete review workbook
+
+This is a **different XLSX file** from the ADO template. It includes the whole
+review, not just accepted work.
+
+1. **Export from the inspector.** Choose **Review > Findings**, then click
+   **Excel (.xlsx)** above the inspector tabs. Its accessible label is
+   **Export all inspector data (.xlsx)**.
+2. **Open the download in Excel.** Find `secure-design-studio-inspector.xlsx`
+   in browser Downloads and open it.
+3. **Read Export info.** Check which scenario was analyzed and when the file
+   was exported.
+4. **Review AI findings.** Select the **AI findings** sheet. Locate the finding
+   you acted on and check **Accepted** is **Yes**. Read its rationale,
+   recommendation, references, and Status. A deleted AI finding is not exported.
+5. **Review Work.** Select the **Work** sheet. Find your accepted task and the
+   earlier pending retention task. Both are included here: this workbook is
+   not filtered to the ADO export queue.
+6. **Inspect the design evidence.** In **Edges**, find Submit case and Store case
+   and check their authentication and protocol IDs. In **Comments**, find your
+   retention question. Use **Nodes**, **Data**, and **Scenarios** to review
+   the rest of the sample. Retention settings are retained in the Scenarios
+   sheet's **Complete record (JSON)** column; to read them more easily, return
+   to each node's **Privacy** tab in SDS.
+   In Excel, click the header row and choose **Data > Filter** to narrow a sheet.
+   If a cell refers to **Long text**, read the numbered parts on that sheet.
+7. **Keep the editable model.** Save `.tma` separately.
+   The workbook is a snapshot across all scenarios and statuses, even when
+   Findings was filtered to this sample. Editing Excel does not change SDS.
+
+| Download | Purpose |
 |---|---|
-| Port 5173 is occupied | The launcher stops and gives an owner-inspection command: `Get-NetTCPConnection -LocalPort 5173 -State Listen` on Windows, `lsof -nP -iTCP:5173 -sTCP:LISTEN` on macOS, or `ss -ltnp 'sport = :5173'` on Linux. Stop only your own server in its terminal; coordinate with other owners. Do not change ports or kill unknown processes. |
-| Public clone fails | Check the public URL `https://github.com/microsoft/SecureDesignStudio.git`, network/proxy access, and your organization's GitHub access controls. This public repository needs no GitHub sign-in or private-repository access; Azure credentials are unrelated. |
-| Node version error | Install or select official Node.js 24 LTS with npm through your approved setup, reopen the terminal, and check `node --version`. The cross-platform launcher reports prerequisite fixes; it does not install Node for you. |
-| PowerShell script blocked by execution policy | Use `npm.cmd start` instead of a `.ps1` launcher or `npm.ps1`. No execution-policy change is needed. If organizational controls block Node/npm themselves, ask your IT administrator. |
-| Design Assistant missing or failing | It is bring your own AI and needs a configured provider. For Azure, use `npm run start:ai -- --provider azure --verify-endpoint` (probe may incur usage). For Claude or Codex, use `npm run start:ai -- --provider claude --diagnose-provider` (or `--provider codex`). See [bring your own AI](bring-your-own-ai.md). |
-| Missing node, flow, or sequence participant | Check the active scenario, use Show all in Diagram if needed, and Filter > Clear all. Sequence requires a scenario and only shows nodes with visible flows. |
-| Cannot create nodes or boundaries | Create/select a scenario first. Show all is not an authoring scenario. |
-| Cannot attach a data item | Check its classification, request/response direction, and receiver policy. Do not weaken policy just to remove a warning. |
-| Storage denied/full or recovery missing | Save `.tma`. Check profile/origin and storage permissions; back up before clearing site data. Working in memory does not guarantee refresh recovery. |
-| Unknown/disabled auth or conflicting definitions | Preserve IDs; review Customize authentication warnings, import needed library JSON, and resolve explicitly. These warnings are independent of build-version compatibility. |
-| Authentication compatibility information | In Model > Customize authentication, expand **Affected items** for methods, flows, and node-type policies across the whole diagram, including inactive/unassigned flows and unused saved policies. Counts are unique per category. Only a running app older than the required version (0.1.5 for new/custom IDs) gets a compatibility warning; a compatible build keeps the neutral inventory. Unknown versions are explicitly undetermined. This is not an authentication failure or older-peer detection. Keep an editable `.tma` backup. |
-| Collaboration or Design Assistant unavailable locally | Expected with `npm start`. Use the configured `npm run start:ai` workflow for the assistant. Do not add collaboration endpoint overrides; use approved optional modes only when needed. |
-| Inspector hidden or stays on the wrong tab | View > Inspector reopens it; View > Properties selects details. Unpin if you want ordinary tabs to follow selection. |
+| `secure-design-studio-ado-import.csv` | Accepted, eligible work prepared for Azure Boards CSV import |
+| `secure-design-studio-ado-import.xlsx` | Excel worksheet for reviewing the same ADO creation rows |
+| `secure-design-studio-inspector.xlsx` | Complete model/review snapshot, including pending and resolved records |
 
-**Essential shortcuts** (use Cmd instead of Ctrl on macOS):
+The XLSX files contain text cells, not macros or executable formulas.
+Re-export after changing the model; existing downloads do not update themselves.
 
-| Action | Shortcut |
-|---|---|
-| New / Open / Save / Save as | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
-| Document Undo / Redo outside text fields | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
-| Toggle extra nodes/boundaries in selection | Ctrl+click |
-| Delete selected objects globally, outside editable fields | Delete / Backspace; use Remove from scenario instead for membership-only changes |
-| Diagram zoom out / in / reset / fit | `-` / `+` or `=` / `0` / `F`, with canvas focus and no Ctrl modifier |
-| Finish / cancel inline node or edge title edit | Ctrl+Enter / Escape after double-clicking the title |
-| Navigate menu items / inspector tabs | Arrow keys, Home, End; Enter activates a menu command, Escape closes the top temporary surface |
+<a id="simulate-a-breach-path"></a>
 
-Bottom-left Diagram controls provide zoom/fit. Settings has theme and autosave
-interval. See [model concepts](#1-what-securedesignstudio-is),
-[Authentication Library](authentication-library.md), and
-[cloud catalog](microsoft-cloud-node-catalog.md) for definitions.
+**Simulate breach** in the Assistant's AI Analysis tab is an optional
+illustration based on retained AI findings and connected flows, not a real
+attack or proof of exploitability. See the
+[AI review reference](advanced-configuration.md#collaborate-or-use-optional-ai).
+
+### Share the sample as a PNG image or HTML report
+
+Use the **Export** button on the command bar to share this sample with someone
+who does not need to edit it. Neither export requires an AI connection.
+
+#### Export a picture of the diagram
+
+1. **Prepare the sample.** Select **Submit a support case**, choose
+   **Filter > Clear all**, and open **View > Diagram**. Check that all three
+   nodes and both flows are visible. The PNG option is unavailable in Sequence
+   view or when **Show all** is selected.
+2. **Download the image.** Click **Export**, then **Diagram image (.png)…**.
+3. **Open the result.** Open your browser's Downloads (Ctrl+J on Windows).
+   If your model is saved as `support-case.tma`, look for
+   `support-case-diagram.png`. Open it in your image viewer.
+   Check that Support web, Support API, Case store, and their flows appear.
+4. **Use the picture.** Add it to a document or presentation to explain the
+   design. It is an image, not an editable model; values hidden on the canvas
+   are not revealed in the picture. Keep your `.tma` file for editing.
+
+#### Export a readable review report
+
+1. **Keep the sample selected.** Stay in **View > Diagram** with
+   **Submit a support case** selected and filters cleared.
+2. **Download the report.** Click **Export**, then **Review report (.html)…**.
+3. **Open the result in a browser.** Find `support-case-review-report.html`
+   in Downloads and open it with your browser. Do not use SDS's **File > Open**.
+   The filename follows your saved model name, so the AI-built copy produces
+   `support-case-ai-review-report.html`.
+4. **Read the sample's details.** Check the scenario heading and diagram.
+   Scroll to **Node inventory** for the three components, then **Data flow
+   inventory** for their authentication and communication settings.
+   In **Data inventory and retention**,
+   find Case text and check the retention recorded for Support API and Case
+   store. Review the comments and saved issues further down the report.
+   If the browser could not capture the diagram, the text tables are still
+   available.
+5. **Share or print.** Share the HTML file with your reviewer, or use your
+   browser's Print command to print it or save a PDF.
+   Check the contents before sharing: the report includes the selected
+   scenario's recorded details, not just what was visible on the canvas.
+
+This HTML report is a readable snapshot, not the standalone SDS application
+or a model backup. It does not replace the complete AI findings workbook.
+Changes made later in SDS do not update either download; export again when
+you need a fresh picture or report.
+
+You have now created, edited, walked through, reviewed, and exported one complete sample.
+<a id="4-advanced-features"></a>
+<a id="7-import-and-export"></a>
+<a id="8-troubleshooting-and-quick-reference"></a>
+
+For library customization, scope settings, import/export formats, collaboration,
+and troubleshooting, use [Advanced configuration and reference](advanced-configuration.md).

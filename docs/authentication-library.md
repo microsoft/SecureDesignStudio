@@ -5,7 +5,7 @@
 The library describes **authentication on flows between modeled services**.
 It neither signs users into SecureDesignStudio nor stores real keys, tokens,
 passwords or certificates. Its entry point is **Model > Customize authentication**.
-For a first model, start with the [user guide](user-guide.md#3-simple-how-to).
+For a first model, start with the [user guide](user-guide.md#3-start-the-support-case-walkthrough).
 This reference defines library behavior, portable JSON, and compatibility.
 
 ## One library, three editable fields
