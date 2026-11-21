@@ -1,8 +1,11 @@
-# SecureDesignStudio reference models
+# SecureDesignStudio sample models
 
-Five **synthetic ideal reference designs** demonstrate concrete service types,
+[Home](../README.md) → [User-guide walkthrough](../docs/user-guide.md#3-start-the-support-case-walkthrough) → Sample models
+
+Five **sample reference designs** demonstrate concrete service types,
 correct DFD roles, operation-scoped authorization and classified privacy data.
-They describe recommended controls, **not observed deployments or security,
+Their names, identities, and data are fictional. They describe intended controls,
+**not observed deployments or security,
 privacy, clinical-safety or compliance certification**.
 
 Open a `.tma` through **File > Open**, or **Open model (.tma)…** in the
@@ -70,7 +73,7 @@ control owner, actual payload, retention and review assumptions.
 - Fictional App IDs identify the **calling application**, not the human.
   Within each model, client `11111111-1111-4111-8111-111111111111`
   is the end-user client; subsequent distinct calling applications have
-  separate synthetic registrations. SaaS A/B share that browser client,
+  separate fictional registrations. SaaS A/B share that browser client,
   while its Web App, gateway and support client use distinct IDs.
   Audiences identify the receiving API. No real credentials or service
   inventory identities are included; illustrative endpoints use `.example`.
@@ -101,6 +104,9 @@ clinical safety, PCI compliance or prompt-injection resistance.
 
 ## Maintaining the gallery
 
+**Next for users:** [Advanced configuration and reference](../docs/advanced-configuration.md).
+The checks below are for contributors, not required to open the samples.
+
 ```powershell
 node --test tests\authentication\samples.test.mjs
 node --test tests\authentication\communication-protocols.test.mjs
@@ -117,7 +123,7 @@ in the native file; XML assertions do not certify desktop TMT rendering.
 Browser contracts exercise the five gallery files and their scenarios,
 rendered service/role/scope, Diagram and Sequence, complete model/view
 save/reopen, measured sizes, label/path overlap, fit clipping and Show all.
-Tests use isolated installed browsers, synthetic data and network guards;
+Tests use isolated installed browsers, fictional data and network guards;
 never reuse an unrelated local server or personal profile. See the
 [browser guide](../tests/browser/README.md).
 Run the full build and applicable browser union separately, without concurrent

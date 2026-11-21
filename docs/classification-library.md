@@ -1,5 +1,7 @@
 # Classification Library
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → Classification
+
 Version 0.1.28 adds one active, browser-profile Classification Library. The
 initial shipped library preserves the existing ten classification IDs, labels,
 descriptions, EUII new-item default, and diagram presentation.
@@ -135,7 +137,7 @@ model or the scenario/DFD JSON import format.
     {
       "id": "ExamplePublic",
       "label": "Example public",
-      "description": "Synthetic category, not an approved public taxonomy.",
+      "description": "Sample category, not an approved public taxonomy.",
       "disabled": false
     }
   ]

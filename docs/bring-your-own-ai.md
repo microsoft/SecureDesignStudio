@@ -1,5 +1,13 @@
 # Bring your own AI
 
+[Home](../README.md) → [User guide](user-guide.md) → Optional AI setup
+
+**Not needed for the first walkthrough.** Complete the manual support-case
+exercise before this optional setup. This page owns provider installation,
+sign-in, and startup instructions; other guides link here rather than repeat
+them. Return to [Design with AI](user-guide.md#build-a-proposed-threat-model-with-ai)
+or [AI review](user-guide.md#optional-review-the-same-sample-with-ai) when ready.
+
 *Updated: 2026-10-11 - Added subscription CLI startup and Codex feature diagnostics.*
 
 The AI Design Assistant is **bring-your-own-AI**. No model service ships with
@@ -284,6 +292,10 @@ You also need the Azure CLI. Install it from
 az login
 az account set --subscription "<your-subscription-name-or-id>"
 ```
+
+For the local Azure API host, install
+[Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local).
+Claude and Codex do not need Core Tools.
 
 Follow your organization's policies for region, naming, tagging, and data
 handling. The commands below are a working baseline, not an approved

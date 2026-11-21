@@ -1,5 +1,7 @@
 # Authentication Library
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → Authentication
+
 *Updated: 2026-10-31 - Added optional AI design guidance to authentication definitions.*
 
 The library describes **authentication on flows between modeled services**.
@@ -44,7 +46,7 @@ repository file. Imported descriptions are text, not executable HTML.
 
 ## Catalog file contract
 
-The JSON wrapper has `format`, `version` and `methods` only. The synthetic
+The JSON wrapper has `format`, `version` and `methods` only. The
 example's `aiDesignGuidance` object is optional; omit it for a method without
 guidance:
 
@@ -389,7 +391,7 @@ establish protocol behavior or target-node acceptance.
 |---|---|
 | `.tma`, autosave, embedded standalone HTML | Stable IDs and saved definitions, including any `aiDesignGuidance`, retained. Document/wrapper versions remain 1/2; `.tma` is unchanged. Embedded models accept only recovery matching their exact exported seed. |
 | Compare to previous | An authentication definition whose AI design guidance differs is reported as a changed definition; the change text names the guidance among the differing fields. |
-| Browser collaboration | Saved definitions synchronize through the existing authentication-definition Y maps, carrying the full nested guidance field, which is validated before the transaction; local library preferences do not synchronize. Test with synthetic peers; this is not live-service validation. |
+| Browser collaboration | Saved definitions synchronize through the existing authentication-definition Y maps, carrying the full nested guidance field, which is validated before the transaction; local library preferences do not synchronize. Test with isolated test peers; this is not live-service validation. |
 | Older readers / mixed-version rooms | Builds older than a referenced method's compatibility floor may discard its ID or definition. Builds that predate `aiDesignGuidance` may reject a definition containing it, or drop the card when re-saving. No guidance-specific minimum application version is defined, so the method-ID compatibility notice below is not assurance that a build supports guidance. Do not use them to edit these models or join their rooms. New-reader/old-file compatibility does not imply old-reader/new-file safety; older peers cannot be reliably detected or prevented. Keep an editable `.tma` backup. |
 | TM7 | Human-readable auth names and an `Auth IDs` label line preserve identifiers emitted by this build. Legacy shipped labels are accepted. Definitions/behavior/guidance are not a native TM7 concept and are not restored; custom IDs reopen unresolved and need explicit resolution. |
 | Scenario/DFD JSON, PMEXP, endpoint imports | These formats do not supply this Authentication Library schema. Do not infer authentication semantics from unrelated text. |
@@ -436,11 +438,11 @@ editable backup as `.tma`.
 ## Validation
 
 `npm run test:runtime` exercises the strict catalog, current-source
-normalization/policy/analyzer/diff and synthetic browser-model Yjs contracts.
+normalization/policy/analyzer/diff and browser-model Yjs test contracts.
 `npm run test:authentication` runs this shared runtime suite.
 Use Node 24 LTS for its current-TypeScript source loader.
 `npm run test:browser` includes flow/library authoring and keyboard/focus
-contracts plus local synthetic browser Yjs peers in the existing isolated
+contracts plus local test browser Yjs peers in the existing isolated
 browser harness. No live rooms are joined. See the
 [browser coverage and evidence guide](../tests/browser/README.md).
 Automated checks are not human-usability research or live collaboration testing.

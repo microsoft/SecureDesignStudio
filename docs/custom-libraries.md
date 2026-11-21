@@ -1,5 +1,7 @@
 # Custom Libraries
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → Custom Libraries
+
 Custom Libraries are explicitly selected deployment packages, not
 authentication providers or authorization grants. They add catalogs, metadata
 fields, declarative checks and help through one documented interface.
@@ -47,7 +49,7 @@ npm run build
 On macOS and Linux, `unset SDS_LIBRARY_PATHS` before `npm run build`. The
 one-line form above sets it only for that command.
 
-The example is synthetic and selected only explicitly. Keep confidential
+The example contains fictional definitions and is selected only explicitly. Keep confidential
 packages out of version control and deployment artifacts. Git ignore rules are
 not sanitization: never distribute an artifact built with confidential packages
 to an unauthorized audience.
@@ -129,7 +131,7 @@ Generic instructions and Choose file remain usable. The dialog never executes
 the example, queries telemetry, signs in or contacts imported endpoint URLs.
 Clipboard denial selects the text and explains how to copy it manually.
 
-The synthetic example demonstrates these slots without organization-specific
+The example demonstrates these slots without organization-specific
 content. Public setup and tests must remain self-contained; an unconfigured
 build must not include organization-specific queries or confidential package
 content.
@@ -258,7 +260,7 @@ an optional `aiDesignGuidance` object. The authentication-specific workflow,
 precedence and portability rules are in the
 [Authentication Library contract](authentication-library.md#ai-design-guidance);
 the shared object, limits and size budget below apply to all three kinds.
-Node definitions may include this optional object (synthetic example):
+Node definitions may include this optional object (example):
 
 ```json
 {
@@ -304,7 +306,7 @@ descriptions. Neither path changes fixed checks or resolves findings.
 Serialized guidance has a 384,000-byte UTF-8 aggregate limit; the entire AI
 request, including context, question and conversation, has a 500,000-byte
 limit. Oversized requests fail visibly, never silently truncate/drop guidance
-or contact AI. A synthetic 177-type catalog with approximately 1,600-character
+or contact AI. A 177-type test catalog with approximately 1,600-character
 guidance on every type is covered by tests and fits both contexts. The 8,000
 per-entry limit is not a promise that 177 maximum-length records fit one
 request. Shorten overly verbose guidance or reduce the selected library/model
@@ -353,14 +355,14 @@ a package.
 Run the normal build and browser union without a configured package to verify
 the unchanged baseline. `npm run test:runtime` includes registry,
 dependency, collision, bounded-read, profile, rule and persistence contracts.
-`npm run test:libraries:browser` separately selects the synthetic package plus
+`npm run test:libraries:browser` separately selects the example package plus
 a missing directory using the existing isolated strict-port harness. Do not
 run browser suites concurrently or against a personal browser profile.
 
-After a build explicitly selecting only the synthetic example, run
+After a build explicitly selecting only the example package, run
 `npm run test:libraries:production` for configured hosted/standalone behavior.
 Rebuild with no selection before handing off an unconfigured artifact.
 
 An internal companion repository may have additional tests for its actual
 optional packages. Those are not public runtime dependencies. The shared suite
-uses synthetic historical fixtures rather than requiring a private directory.
+uses historical test fixtures rather than requiring a private directory.

@@ -1,5 +1,7 @@
 # SecureDesignStudio use cases
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → Use cases → [Architecture](architecture.md)
+
 *Updated: 2026-11-09 - Reviewed workflows, persistence limits and optional services against the current implementation.*
 
 This page describes who uses SecureDesignStudio (SDS) and what they use it
@@ -84,7 +86,7 @@ flowchart LR
 | UC-02 | Migrate an existing Threat Modeling Tool model | Author | **File > Import > From TM7** |
 | UC-03 | Import a scenario/DFD JSON model | Author | **File > Import > Import JSON format** |
 | UC-04 | Merge a data inventory (PMEXP) | Author | **File > Import > PMEXP import** |
-| UC-05 | Draw services, flows and boundaries | Author | Canvas context menu, **Nodes from endpoints** |
+| UC-05 | Draw services, flows and boundaries | Author | Canvas context menu, **Model > Endpoint matching** |
 | UC-06 | Describe how each flow is secured | Author | Inspector **Properties** for a flow |
 | UC-07 | Describe data, classification and retention | Author | **Model > Data Elements**, flow and node **Privacy** |
 | UC-08 | Reuse components across scenarios and walk the call order | Author | Scenario membership, **View > Sequence** |
@@ -94,7 +96,7 @@ flowchart LR
 | UC-12 | Track follow-up work and hand it to Azure DevOps | Reviewer | **Model > Work Items**, Work inspector tab |
 | UC-13 | Compare the model with a previous revision | Reviewer | **File > Compare to previous**, **Review > Changes** |
 | UC-14 | Save, recover and reopen a model | Author | **File > Save as**, autosave, **File > Open** |
-| UC-15 | Share review outputs | Reviewer | **File > Save as** (TM7, Visio, standalone HTML, PNG, HTML report), Excel export |
+| UC-15 | Share review outputs | Reviewer | **File > Save as** (TM7, Visio, standalone HTML), **Export** (PNG, HTML report), inspector Excel export |
 | UC-16 | Customize authentication, classification and communication libraries | Author | **Model > Customize** commands |
 | UC-17 | Deploy SDS with organization Custom Libraries | Deployer | Build configuration (`SDS_LIBRARY_PATHS`) |
 | UC-18 | Design and review with AI (optional) | Author, reviewer | **File > Design with AI**, Design Assistant panel |
@@ -105,7 +107,7 @@ flowchart LR
 ### UC-01 Start a new model and first scenario
 
 - **Goal:** Begin describing a workflow from a blank model.
-- **Preconditions:** SDS is open in Edge or Chrome. No account or AI setup is needed.
+- **Preconditions:** SDS is open in a modern browser, such as Firefox, Microsoft Edge, or Google Chrome. No account or AI setup is needed.
 - **Main flow:**
   1. The author enters a scenario name such as *Submit a support case* in the first-run prompt and chooses **Create**.
   2. The author adds nodes from the canvas context menu and chooses a node type for each.
@@ -182,7 +184,7 @@ flowchart LR
 - **Goal:** Keep privacy information next to the architecture.
 - **Preconditions:** A scenario with flows.
 - **Main flow:**
-  1. The author defines data items in **Model > Data Elements**, each with a classification and an optional synthetic sample.
+  1. The author defines data items in **Model > Data Elements**, each with a classification and an optional sample. Use fictional values for practice.
   2. The author attaches data to each flow, separately for the request and the response.
   3. The author records retention for data held by each receiving node in that scenario.
 - **Alternatives:** A node type defers geography or post-subscription retention to the instance; the author supplies the instance value or Analyze reports it.
@@ -350,7 +352,7 @@ flowchart LR
 | UC-16 | [`AuthenticationLibraryModal.tsx`](../src/components/AuthenticationLibraryModal.tsx), [`ClassificationLibraryModal.tsx`](../src/components/ClassificationLibraryModal.tsx), [`ProtocolLibraryModal.tsx`](../src/components/ProtocolLibraryModal.tsx) | Library cases in `test:browser` |
 | UC-17 | [`libraries/`](../src/libraries), [`scripts/custom-libraries.mjs`](../scripts/custom-libraries.mjs) | `libraries.test.mjs`, `test:libraries:browser` |
 | UC-18 | [`designAssistant.ts`](../src/designAssistant.ts), [`threatModelDesigner.ts`](../src/threatModelDesigner.ts), [`breachSimulation.tsx`](../src/breachSimulation.tsx), [`api/design-assistant`](../api/design-assistant) | `threat-model-designer.test.mjs`, `test:ai:local`, `test:assistant:production` |
-| UC-19 | [`collab/`](../src/collab), [`api/collab-token`](../api/collab-token) | Synthetic Yjs peer cases in `test:browser` |
+| UC-19 | [`collab/`](../src/collab), [`api/collab-token`](../api/collab-token) | Isolated Yjs test-peer cases in `test:browser` |
 
 These are related source and test entry points, not proof that every step of
 each workflow has automated coverage. The

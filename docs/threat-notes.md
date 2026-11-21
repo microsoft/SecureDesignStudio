@@ -1,5 +1,7 @@
 # Authored threat notes
 
+[Home](../README.md) → [User-guide review](user-guide.md#5-review-the-support-case-design) → Threat notes
+
 Select a node or flow and choose **Add threat note** in its Issues section,
 or open **Review > Issues** with that node/flow selected. Enter an optional
 title and free-form multiline **Threat / mitigation notes**. **Justification**
@@ -91,7 +93,7 @@ appears before replacement. It does not import legacy Priority as severity.
 
 ## Evidence boundaries
 
-Synthetic pure tests cover provenance, exact text, native serialization,
+Isolated pure tests cover provenance, exact text, native serialization,
 aggregation, projection, invalid references, report/diff, recovery and
 compatible-peer propagation. Native node GUID persistence plus the correct
 visible row/tab/text is the bounded node association contract; automatic

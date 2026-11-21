@@ -1,5 +1,7 @@
 # Microsoft cloud node-type catalog
 
+[Home](../README.md) → [Advanced reference](advanced-configuration.md) → Cloud node catalog
+
 Inventory baseline: 2026-08-16; scoped product-boundary/guidance update: 2026-10-09.
 
 *Updated: 2026-10-13 - Added the vendor-neutral Generic process, networking and storage catalog.*
