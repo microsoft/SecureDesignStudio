@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { until } from "./harness.mjs";
-import { modelFixture } from "./fixture.mjs";
+import { autosaveKey, modelFixture } from "./fixture.mjs";
 
 export async function openEndpointDialog(page, route = "model") {
   await page.locator(`button[aria-controls="ps-command-menu-${route}"]`).click();
@@ -78,6 +78,13 @@ export function registerEndpointContracts({ getHarness, exportModel, configured 
         const chunks = [];
         for await (const chunk of await unknown.createReadStream()) chunks.push(chunk);
         assert.equal(Buffer.concat(chunks).toString("utf8"), "https://unmatched.example.invalid\n");
+        const results = page.getByRole("dialog", { name: "Endpoint import results", exact: true });
+        await results.waitFor();
+        assert.equal(await results.locator("tbody tr").count(), 3);
+        assert.match(await results.innerText(), /EndpointSpecific/);
+        assert.match(await results.innerText(), /No matching type/);
+        assert.equal(await results.getByRole("combobox").first().inputValue(), "");
+        await results.getByRole("button", { name: "Done", exact: true }).click();
       };
       await upload();
       const imported = await exportModel(page);
@@ -93,9 +100,170 @@ export function registerEndpointContracts({ getHarness, exportModel, configured 
       await upload();
       assert.deepEqual((await exportModel(page)).doc, imported.doc);
       const alerts = await page.evaluate(() => window.endpointAlerts);
-      assert.equal(alerts.length, 2);
-      assert.match(alerts[0], /Imported 1 new node type/);
-      assert.match(alerts[1], /Imported 0 new node types/);
+      assert.deepEqual(alerts, []);
+    });
+  });
+
+  test(`regression: explicit node endpoints retain asset identity, history and recovery ${configured ? "configured" : "core"}`, async () => {
+    await getHarness().run("regression: node endpoint assignments", async ({ page, context, observations }) => {
+      const model = modelFixture();
+      model.doc.nodes.forEach((node, index) => {
+        node.title = ["Support web", "Support API", "Case store"][index];
+        node.type = index < 2 ? "support-app" : "support-store";
+      });
+      model.doc.scenarios[0].nodeIds.push("n_archive");
+      for (const [id, label, pattern] of [
+        ["support-app", "App Service app", "^https://support-(web|api)\\.example\\.com(/|$)"],
+        ["support-store", "Storage account", "^https://case-store\\.example\\.com(/|$)"],
+      ]) model.doc.nodeTypes.push({ id, label, definition: { serviceTreeId: "", endpointRegex: pattern,
+        allowedAuthMethods: [], allowedDataTypes: [], policyStatus: "Unspecified" } });
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "support.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
+      });
+      const before = await exportModel(page);
+      await context.setOffline(true);
+      const addresses = ["https://support-web.example.com/", "https://support-api.example.com/cases",
+        "https://case-store.example.com/cases", "https://unmatched.example.invalid/"];
+      const dialog = await openEndpointDialog(page);
+      const chooser = page.waitForEvent("filechooser");
+      await dialog.getByRole("button", { name: "Choose file…" }).click();
+      const downloaded = page.waitForEvent("download");
+      await (await chooser).setFiles({ name: "support-endpoints.txt", mimeType: "text/plain",
+        buffer: Buffer.from([...addresses, addresses[0]].join("\n")) });
+      await downloaded;
+      const results = page.getByRole("dialog", { name: "Endpoint import results", exact: true });
+      await results.waitFor();
+      await until(() => results.getByRole("button", { name: "Close", exact: true })
+        .evaluate(el => el === document.activeElement), "results focus");
+      assert.match(await results.innerText(), /Imported 0 new node types \(2 matched in total\)/);
+      assert.equal(await results.locator("tbody tr").count(), 5);
+      assert.equal(await results.getByText("Type already exists", { exact: true }).count(), 4);
+      assert.equal(await results.getByText("Not assigned", { exact: true }).count(), 5);
+      await page.setViewportSize({ width: 320, height: 560 });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+      for (const [index, id] of ["n_client", "n_api", "n_archive", "n_api", "n_client"].entries()) {
+        const row = results.locator("tbody tr").nth(index);
+        await row.getByRole("combobox").selectOption(id);
+        if (index === 4) {
+          assert.equal(await row.getByRole("button", { name: "Assign", exact: true }).isDisabled(), true);
+        } else {
+          await row.getByRole("button", { name: "Assign", exact: true }).click();
+          await row.getByText(/^Assigned to:/).waitFor();
+        }
+      }
+      await results.getByRole("button", { name: "Done", exact: true }).focus();
+      await page.keyboard.press("Tab");
+      assert.equal(await results.getByRole("button", { name: "Close", exact: true })
+        .evaluate(el => el === document.activeElement), true);
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: 1366, height: 900 });
+      const assigned = await exportModel(page);
+      assert.deepEqual(assigned.doc.nodes.map(node => node.endpoints), [
+        [addresses[0]], [addresses[1], addresses[3]], [addresses[2]],
+      ]);
+      assert.deepEqual(assigned.doc.edges, before.doc.edges, "addresses never create flows");
+      assert.deepEqual(assigned.doc.scenarios, before.doc.scenarios);
+      assert.deepEqual(assigned.doc.nodes.map(({ endpoints, ...node }) => node), before.doc.nodes);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      const undone = await exportModel(page);
+      assert.deepEqual(undone.doc.nodes[1].endpoints, [addresses[1]]);
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      assert.deepEqual((await exportModel(page)).doc, assigned.doc);
+      await page.locator('.react-flow__node-process[data-id="n_client"] .ps-node-title').click();
+      await page.getByRole("tab", { name: "Endpoints", exact: true }).click();
+      const endpointPanel = page.getByRole("region", { name: "Assigned endpoints" });
+      await endpointPanel.getByText(addresses[0], { exact: true }).waitFor();
+      assert.equal(await endpointPanel.getByText(addresses[1], { exact: true }).count(), 0);
+      await endpointPanel.getByRole("button", { name: `Remove ${addresses[0]}`, exact: true }).click();
+      await endpointPanel.getByText("No endpoints assigned to this node.", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await page.locator('.react-flow__node-process[data-id="n_client"] .ps-node-title').click();
+      await page.getByRole("tab", { name: "Endpoints", exact: true }).click();
+      await endpointPanel.getByText(addresses[0], { exact: true }).waitFor();
+      await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+      await until(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).doc.nodes[0].endpoints?.length === 1,
+        autosaveKey), "assigned endpoints autosaved");
+      await context.setOffline(false);
+      await page.reload();
+      assert.deepEqual((await exportModel(page)).doc.nodes.map(node => node.endpoints),
+        assigned.doc.nodes.map(node => node.endpoints));
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "assigned.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(assigned)),
+      });
+      assert.deepEqual((await exportModel(page)).doc, assigned.doc);
+      await page.locator('.react-flow__node-process[data-id="n_client"] .ps-node-title').click();
+      await page.getByRole("tab", { name: "Endpoints", exact: true }).click();
+      await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("floating");
+      await page.getByRole("region", { name: "Assigned endpoints" }).getByText(addresses[0], { exact: true }).waitFor();
+      const popupEvent = context.waitForEvent("page");
+      await page.getByRole("combobox", { name: "Inspector display", exact: true }).selectOption("window");
+      const popup = await popupEvent;
+      const popupPanel = popup.getByRole("region", { name: "Assigned endpoints" });
+      await popupPanel.getByText(addresses[0], { exact: true }).waitFor();
+      await popupPanel.getByRole("button", { name: `Remove ${addresses[0]}`, exact: true }).click();
+      await popupPanel.getByText("No endpoints assigned to this node.", { exact: true }).waitFor();
+      assert.equal(await popupPanel.locator("p").first().evaluate(el => el === document.activeElement), true);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await page.locator('.react-flow__node-process[data-id="n_client"] .ps-node-title').click();
+      await popup.getByRole("tab", { name: "Endpoints", exact: true }).click();
+      await popupPanel.getByText(addresses[0], { exact: true }).waitFor();
+      await popup.close();
+      await page.getByRole("region", { name: "Assigned endpoints" }).getByText(addresses[0], { exact: true }).waitFor();
+      await page.locator('.ps-edge-label[data-edge-id="e_request"] .ps-edge-num').click();
+      assert.equal(await page.getByRole("tab", { name: "Endpoints", exact: true }).count(), 0);
+      assert.equal(await page.getByRole("tab", { name: /^General \/ Security/ }).getAttribute("aria-selected"), "true");
+      observations.assignedEndpoints = assigned.doc.nodes.map(node => ({ id: node.id, endpoints: node.endpoints }));
+    });
+  });
+
+  test(`regression: endpoint results preserve unresolved duplicate-line choices ${configured ? "configured" : "core"}`, async () => {
+    await getHarness().run("regression: unresolved endpoint rows", async ({ page }) => {
+      const model = modelFixture();
+      model.doc.nodes[0].endpoints = Array.from({ length: 1000 }, (_, index) => `/existing/${index}`);
+      for (const id of ["EndpointCandidateA", "EndpointCandidateB"]) {
+        model.doc.nodeTypes.push({ id, label: id, definition: { serviceTreeId: "",
+          endpointRegex: "^https://ambiguous\\.example\\.invalid/", allowedAuthMethods: [],
+          allowedDataTypes: [], policyStatus: "Unspecified" } });
+      }
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "ambiguous.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(model)),
+      });
+      await page.evaluate(() => {
+        window.endpointPromptAnswers = [null, "2"];
+        window.prompt = () => window.endpointPromptAnswers.shift();
+      });
+      const dialog = await openEndpointDialog(page);
+      const chooser = page.waitForEvent("filechooser");
+      await dialog.getByRole("button", { name: "Choose file…" }).click();
+      const unknownEvent = page.waitForEvent("download");
+      await (await chooser).setFiles({ name: "ambiguous.txt", mimeType: "text/plain",
+        buffer: Buffer.from(Array(3).fill("https://ambiguous.example.invalid/").join("\n")) });
+      const unknown = await unknownEvent;
+      const chunks = [];
+      for await (const chunk of await unknown.createReadStream()) chunks.push(chunk);
+      assert.equal(Buffer.concat(chunks).toString("utf8"), "https://ambiguous.example.invalid/\n");
+      const results = page.getByRole("dialog", { name: "Endpoint import results", exact: true });
+      await results.waitFor();
+      assert.equal(await results.locator("tbody tr").count(), 3);
+      assert.equal(await results.locator("tbody tr").nth(0).getByText("Unmatched", { exact: true }).count(), 1);
+      for (const index of [1, 2]) {
+        const row = results.locator("tbody tr").nth(index);
+        assert.equal(await row.getByText("EndpointCandidateB", { exact: true }).count(), 1);
+        assert.equal(await row.getByText("Node added", { exact: true }).count(), 1);
+        assert.equal(await row.getByRole("combobox").inputValue(), "");
+      }
+      const unresolved = results.locator("tbody tr").nth(0);
+      await unresolved.getByRole("combobox").selectOption("n_client");
+      await unresolved.getByRole("button", { name: "Assign", exact: true }).click();
+      const error = results.getByRole("alert").filter({ hasText: "at most 1000 addresses" });
+      await error.waitFor();
+      await until(() => error.evaluate(el => el === document.activeElement), "assignment error focus");
+      await results.getByRole("button", { name: "Done", exact: true }).click();
+      const saved = await exportModel(page);
+      assert.equal(saved.doc.nodes.filter(node => node.type === "EndpointCandidateB").length, 1);
+      assert.equal(saved.doc.nodes.filter(node => node.type === "EndpointCandidateA").length, 0);
+      assert.deepEqual(saved.doc.nodes[0].endpoints, model.doc.nodes[0].endpoints);
+      assert.ok(saved.doc.nodes.slice(1).every(node => !node.endpoints?.length));
     });
   });
 }

@@ -2,13 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { useLibraries } from "../libraries/LibraryProvider";
 import { endpointImportHelp } from "../libraries/endpointHelp";
 import { safeNavigationHref } from "../urlSafety";
+import { useStore } from "../store";
+import { resolveNodeTypeDef } from "../types";
+import type { EndpointImportResults } from "../nodeEndpoints";
 
 export function ImportEndpointsDialog({
   onCancel,
   onChooseFile,
+  results,
 }: {
   onCancel: () => void;
   onChooseFile: () => void;
+  results?: EndpointImportResults;
 }) {
   const libraries = useLibraries();
   const { instructions, example } = endpointImportHelp(libraries);
@@ -33,7 +38,7 @@ export function ImportEndpointsDialog({
     }
     if (event.key !== "Tab") return;
     const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
-      "button:not(:disabled), textarea, a[href], [tabindex]:not([tabindex='-1'])",
+      "button:not(:disabled), select:not(:disabled), textarea, a[href], [tabindex]:not([tabindex='-1'])",
     ) ?? []);
     const first = controls[0];
     const last = controls[controls.length - 1];
@@ -69,12 +74,13 @@ export function ImportEndpointsDialog({
         aria-labelledby="ps-endpoints-dialog-title"
       >
         <header className="ps-modal-header">
-          <h2 id="ps-endpoints-dialog-title">Import nodes from Endpoints</h2>
+          <h2 id="ps-endpoints-dialog-title">{results ? "Endpoint import results" : "Import nodes from Endpoints"}</h2>
           <button ref={closeRef} type="button" className="ps-modal-close" aria-label="Close" onClick={onCancel}>
             ×
           </button>
         </header>
         <div className="ps-modal-body">
+          {results ? <EndpointResults results={results} /> : <>
           <p>
             Match each nonblank line in a plain-text file against the endpoint
             expressions in the node catalog. Use one endpoint URL per line,
@@ -85,6 +91,8 @@ export function ImportEndpointsDialog({
             telemetry, scan services or contact those URLs. Matching node
             types missing from the diagram are added to the active scenario;
             unmatched lines are downloaded separately.
+            Review the results and explicitly assign addresses to nodes.
+            Type matching alone does not identify an individual asset.
           </p>
           {!instructions && !example && <p>
             No optional endpoint guidance is configured. You can still choose
@@ -119,12 +127,68 @@ export function ImportEndpointsDialog({
             >Open example guidance</a>}
             <p role="status">{copyStatus}</p>
           </section>}
+          </>}
         </div>
         <footer className="ps-modal-footer ps-dialog-actions">
-          <button type="button" onClick={onCancel}>Cancel</button>
-          <button type="button" className="ps-modal-primary" onClick={onChooseFile}>Choose file…</button>
+          <button type="button" onClick={onCancel}>{results ? "Done" : "Cancel"}</button>
+          {!results && <button type="button" className="ps-modal-primary" onClick={onChooseFile}>Choose file…</button>}
         </footer>
       </div>
     </div>
   );
+}
+
+function EndpointResults({ results }: { results: EndpointImportResults }) {
+  const { doc, nodeTypeCatalog, setNodeEndpoint } = useStore();
+  const [choices, setChoices] = useState<Record<number, string>>({});
+  const [error, setError] = useState("");
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!error) return;
+    errorRef.current?.focus();
+    errorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
+  const types = new Set(results.rows.flatMap(row => row.typeId ? [row.typeId] : []));
+  const added = new Set(results.rows.filter(row => row.nodeAdded).map(row => row.typeId));
+  const typeLabel = (id: string) => resolveNodeTypeDef(id, nodeTypeCatalog)?.label ?? id;
+  return <>
+    <p role="status">Imported {added.size} new node {added.size === 1 ? "type" : "types"} ({types.size} matched in total).</p>
+    <p>Choose a node, then select Assign for each address you want to keep. Nothing is assigned automatically.
+      Assignment does not discover flows, contact endpoints or verify deployment.</p>
+    {results.unknownName && <p>Unmatched lines were downloaded as <strong>{results.unknownName}</strong>.</p>}
+    {results.warnings.map(warning => <p key={warning} role="alert">{warning}</p>)}
+    {error && <p ref={errorRef} role="alert" tabIndex={-1}>{error}</p>}
+    <div className="ps-endpoint-results">
+      <table>
+        <thead><tr><th scope="col">Address</th><th scope="col">Matched type</th><th scope="col">Import result</th><th scope="col">Assign to node</th></tr></thead>
+        <tbody>{results.rows.map((row, index) => {
+          const assigned = doc.nodes.filter(node => node.endpoints?.includes(row.address));
+          const selected = choices[index] ?? "";
+          return <tr key={index}>
+            <td>{row.address}</td>
+            <td>{row.typeId ? typeLabel(row.typeId) : "Unmatched"}</td>
+            <td>{!row.typeId ? "No matching type" : row.nodeAdded ? "Node added" : "Type already exists"}</td>
+            <td>
+              <select aria-label={`Node for ${row.address} (row ${index + 1})`} value={selected}
+                onChange={event => setChoices(previous => ({ ...previous, [index]: event.target.value }))}>
+                <option value="">Choose a node</option>
+                {[...doc.nodes].sort((a, b) => Number(b.type === row.typeId) - Number(a.type === row.typeId)).map(node =>
+                  <option key={node.id} value={node.id}>{node.title || "(Untitled)"} - {typeLabel(node.type)} ({node.id})</option>)}
+              </select>
+              <button type="button" disabled={!doc.nodes.some(node => node.id === selected) ||
+                assigned.some(node => node.id === selected)} onClick={() => {
+                try {
+                  setNodeEndpoint(selected, row.address, true);
+                  setError("");
+                } catch (failure) {
+                  setError(failure instanceof Error ? failure.message : String(failure));
+                }
+              }}>Assign</button>
+              <p>{assigned.length ? `Assigned to: ${assigned.map(node => node.title || node.id).join(", ")}` : "Not assigned"}</p>
+            </td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+  </>;
 }

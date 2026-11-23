@@ -9,6 +9,8 @@ const { normalizeDoc } = await import("../../src/store.tsx");
 const { nodeTypeMetadataDefaults } = await import("../../src/nodeTypeMetadata.ts");
 const { createYShape } = await import("../../src/collab/yDoc.ts");
 const { reconcileLocalToY, buildDocFromY } = await import("../../src/collab/reconcile.ts");
+const { normalizeNodeEndpoints } = await import("../../src/nodeEndpoints.ts");
+const { diffDocuments } = await import("../../src/diff.ts");
 const nodeType = {
   id: "Legacy Service (v1)", label: "Legacy service",
   definition: {
@@ -18,6 +20,58 @@ const nodeType = {
     allowedDataTypes: [{ id: "*", retention: "*", action: "Deny" }],
   },
 };
+
+test("node endpoints: strict address collections preserve exact identity and legacy absence", () => {
+  assert.equal(normalizeNodeEndpoints(undefined), undefined);
+  assert.deepEqual(normalizeNodeEndpoints([" https://support.example.invalid/ ", "/cases", "/cases"]),
+    ["https://support.example.invalid/", "/cases"]);
+  assert.deepEqual(normalizeNodeEndpoints(["x".repeat(4096)]), ["x".repeat(4096)]);
+  assert.equal(normalizeNodeEndpoints(Array.from({ length: 1000 }, (_, i) => `/case/${i}`)).length, 1000);
+  for (const value of [null, {}, "https://example.invalid/", [""], [" \t"], [1], ["bad\naddress"],
+    ["bad\u0000address"], ["bad\u007faddress"], ["x".repeat(4097)], Array(1001).fill("/cases")]) {
+    const doc = documentFixture();
+    doc.nodes[0].endpoints = value;
+    assert.throws(() => normalizeDoc(doc), /endpoint/i);
+  }
+  assert.equal(normalizeDoc(documentFixture()).nodes[0].endpoints, undefined);
+});
+
+test("node endpoints: native roundtrip, exact diff and synthetic reconnect retain per-node assignments", () => {
+  const doc = normalizeDoc(documentFixture());
+  const assigned = structuredClone(doc);
+  assigned.nodes[0].endpoints = ["https://support-web.example.invalid/", "/cases"];
+  assert.deepEqual(normalizeDoc(JSON.parse(JSON.stringify(assigned))), assigned);
+  const changes = diffDocuments(doc, assigned).filter(change => /assigned endpoints/.test(change.description));
+  assert.equal(changes.length, 1);
+  assert.deepEqual(changes[0].target, { kind: "node", id: doc.nodes[0].id });
+  const reordered = structuredClone(assigned);
+  reordered.nodes[0].endpoints.reverse();
+  assert.equal(diffDocuments(assigned, reordered).filter(change => /assigned endpoints/.test(change.description)).length, 0);
+  const a = createYShape(), b = createYShape(), reconnect = createYShape();
+  try {
+    reconcileLocalToY(a, assigned);
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    const left = buildDocFromY(a), right = buildDocFromY(b);
+    left.nodes[0].endpoints.push("/explicit-new-address");
+    right.nodes[0].description = "Concurrent unrelated edit";
+    reconcileLocalToY(a, left);
+    reconcileLocalToY(b, right);
+    Y.applyUpdate(a.ydoc, Y.encodeStateAsUpdate(b.ydoc));
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    Y.applyUpdate(reconnect.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    for (const shape of [a, b, reconnect]) {
+      assert.deepEqual(buildDocFromY(shape).nodes[0].endpoints, [...assigned.nodes[0].endpoints, "/explicit-new-address"]);
+      assert.equal(buildDocFromY(shape).nodes[0].description, "Concurrent unrelated edit");
+    }
+    const removed = buildDocFromY(a);
+    removed.nodes = [];
+    reconcileLocalToY(a, removed);
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    assert.deepEqual(buildDocFromY(b).nodes, []);
+  } finally {
+    a.ydoc.destroy(); b.ydoc.destroy(); reconnect.ydoc.destroy();
+  }
+});
 
 test("node metadata: package IDs retain spaces and parentheses without weakening package identity validation", () => {
   const pkg = {

@@ -406,6 +406,14 @@ export function diffDocuments(
           target: { kind: "node", id },
         });
       }
+      if (JSON.stringify([...(pn.endpoints ?? [])].sort()) !== JSON.stringify([...(n.endpoints ?? [])].sort())) {
+        changes.push({
+          id: nextId(),
+          category: "node",
+          description: `Updated assigned endpoints on node "${nodeLabel(n, id)}"`,
+          target: { kind: "node", id },
+        });
+      }
       // Geo-boundary instance override. We label these as "override" changes
       // explicitly to disambiguate them from the type-level value (which
       // isn't part of the diff — type catalogs are code-defined).

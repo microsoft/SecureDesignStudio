@@ -287,29 +287,43 @@ patterns to recognize the types of components in a file.
    Find `support-endpoints.txt` in the folder where you saved it, select it,
    and click **Open** in the file picker. The import runs when you open the file;
    there is no separate Import button.
-5. **Read the browser's result popup.** Immediately after import, a popup
-   should say:
+5. **Review and assign the addresses.** The **Endpoint import results** dialog
+   shows:
 
    ```text
-   Imported 0 new node types (2 matched in total). All endpoints recognized.
+   Imported 0 new node types (2 matched in total).
    ```
 
-   Click **OK** to close it. The popup shows totals, **not a list of which
-   address matched which type**. In this exercise, the patterns you entered
-   match the web and API addresses to **App Service app**, and the store
-   address to **Storage account**.
    Zero new nodes is expected because both types already exist in your diagram.
-   Your three nodes and two flows stay in place; no matching labels or URL
-   assignments are added to them. If you already closed the popup, import the
-   same file again to see the totals; it will not duplicate existing types.
-   If the popup reports unmatched addresses, check the copied patterns and file
+   Each address has a row showing its matched type, **Type already exists**,
+   and **Not assigned**. In each row, use **Choose a node** to select the node
+   below, then click **Assign**:
+
+   | Address | Choose this node |
+   |---|---|
+   | `https://support-web.example.com/` | Support web |
+   | `https://support-api.example.com/cases` | Support API |
+   | `https://case-store.example.com/cases` | Case store |
+
+   Check **Assigned to:** on all three rows, then click **Done**.
+   Type matching cannot distinguish Support web from Support API because
+   both use **App Service app**; nothing is assigned automatically.
+   Your three nodes and two flows stay in place.
+   If a row is **Unmatched**, check the copied patterns and file
    contents. Those lines are downloaded in `support-endpoints_unknown.txt`.
-6. **Save the exercise.** Save your `.tma` again to keep the asset IDs and
-   edited type definitions.
+6. **See the saved addresses.** Select **Support web** on the canvas and open
+   **Properties > Endpoints** to see its web address. Select **Support API**,
+   then **Case store**, and check each node's address in the same tab.
+   **Remove** unassigns an address; **Undo/Redo** can recover assignments and
+   removals. Addresses belong to the node across scenarios.
+7. **Save the exercise.** Save your `.tma` again to keep the asset IDs,
+   edited type definitions, and endpoint assignments. Reopen it to check them.
 
 Endpoint matching is useful when you have an endpoint list and want to add
 missing component types to a model. It adds one node per missing type, not one
-per address. It does not visit the URLs, configure services, or draw flows.
+per address. Explicit assignments record your knowledge; they do not verify API
+or deployment evidence. Matching does not visit URLs, configure services, or
+draw flows. Keep the native `.tma`; external diagram formats may omit assignments.
 
 ### Editing, undo, and recovery
 

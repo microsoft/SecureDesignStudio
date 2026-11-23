@@ -10,6 +10,17 @@ const { buildReviewReportHtml } = await import("../../src/reportExport.ts");
 
 const PAYLOADS = ["java\tscript:alert(1)", "jav\nascript:alert(1)", "\u0001javascript:alert(1)", "javascript:alert(1)", "data:text/html,<b>x</b>"];
 
+test("node endpoint assignments remain escaped authored text in the review report", () => {
+  const doc = normalizeDoc(documentFixture());
+  doc.nodes[0].endpoints = ["https://example.invalid/<script>&", "javascript:alert(1)"];
+  const html = buildReviewReportHtml({ doc, scenario: doc.scenarios[0],
+    documentFileName: "synthetic.tma", appVersion: "test" });
+  assert.match(html, /Assigned endpoints/);
+  assert.match(html, /https:\/\/example\.invalid\/&lt;script&gt;&amp;/);
+  assert.match(html, /javascript:alert\(1\)/);
+  assert.doesNotMatch(html, /href="(?:javascript:|https:\/\/example\.invalid\/)/);
+});
+
 test("regression: report work-item links are scheme allow-listed and the report carries a CSP", () => {
   for (const link of PAYLOADS) {
     const doc = documentFixture();

@@ -709,6 +709,8 @@ export interface PsNode {
   serviceTreeId: string;
   endpointRegex: string;
   position: Position;
+  // Explicit address assignments, not verified API or deployment evidence.
+  endpoints?: string[];
   // Measured canvas size used for deterministic boundary containment.
   // Optional for compatibility with older documents; normalization fills it.
   size?: Size;

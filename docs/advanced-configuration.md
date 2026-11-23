@@ -531,7 +531,7 @@ browser save picker or download dialog. **File > Open** replaces the model;
 | Threat Modeling Tool `.tm7` | File > Import; File > Save as | Exchange drawings with Threat Modeling Tool. Some security/privacy metadata is lost. |
 | Scenario/DFD JSON | File > Import > Import JSON format | Import a supported scenario/diagram export, not arbitrary JSON. Replaces the model. |
 | Privacy Manager `.pmexp` | File > Import > PMEXP import | Merge a local data inventory into mapped or new nodes. You need scenarios first. |
-| Endpoint `.txt` | File > Import > Endpoints text; Model > Endpoint matching | Match listed endpoints to node types and add missing nodes in the active scenario. Does not discover calls or scan services. |
+| Endpoint `.txt` | File > Import > Endpoints text; Model > Endpoint matching | Match listed endpoints to node types and add missing nodes in the active scenario. Endpoint import results lists every address; choose a node and click Assign to save it under Properties > Endpoints. Does not discover calls or scan services. Unmatched lines download as `_unknown.txt`. |
 | Visio `.vsdx` | File > Save as > Microsoft Visio | Export one page per scenario. Privacy boundaries are included; security boundaries and text annotations are omitted. There is no Visio importer. |
 | Diagram `.png` | Export > Diagram image | A picture of the active Diagram scenario, including offscreen content within current filters. Not editable model data. |
 | Review `.html` | Export > Review report | A report for the active scenario, optionally with a diagram image. Not the app itself. |
@@ -632,7 +632,18 @@ Import a local text list through **File > Import > Endpoints text** or
 **Model > Endpoint matching**. Review and edit node-type patterns in
 **Model > Node Type Catalog**.
 Matched types missing from the model can become nodes in the selected scenario.
-Unmatched lines are downloaded as `_unknown.txt`.
+The **Endpoint import results** dialog shows every address, its matched type,
+and **Node added**, **Type already exists**, or **No matching type**.
+Choose a node and click **Assign** on each row you want to keep; even a newly
+added node receives no address automatically. **Assigned to:** confirms the
+saved association. See or remove it in the node's **Properties > Endpoints** tab.
+Unmatched rows remain visible, and their original lines download as `_unknown.txt`.
+You can explicitly assign an unmatched address to a known node.
+
+Import at most 1000 nonblank lines in a file no larger than 4.2 MB; each address
+must be at most 4096 characters without control characters. Repeated assignment
+to the same node does not duplicate an address. Associations are authored model
+metadata, not verified API, deployment, authentication, or connectivity evidence.
 
 A Custom Library may provide instructions for obtaining an endpoint list.
 Those instructions are optional: copying an example does not run it, sign you
@@ -716,7 +727,9 @@ the resulting model edits are shared with the room.
 
 Choose **Optimize** beside the bottom-left zoom controls, or
 **View > Optimize diagram**. It arranges visible objects while keeping their
-full flow titles and visible communication-profile and authentication indicators.
+full flow titles and visible communication-profile, authentication, and privacy
+classification badges (such as `EUII +1`). Badges summarize request and response
+data; full assignments remain on the flow's **Privacy** tab.
 Select a flow to open Properties.
 
 You can keep dragging, resizing, connecting, and editing after Optimize.

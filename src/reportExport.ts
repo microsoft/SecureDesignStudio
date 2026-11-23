@@ -264,6 +264,7 @@ export function buildReviewReportHtml(options: {
     escapeHtml(node.description || "—"),
     escapeHtml(node.serviceTreeId || (options.inventoryRequired ? "Missing" : "Not specified")),
     escapeHtml(node.endpointRegex || "—"),
+    escapeHtml((node.endpoints ?? []).join("\n") || "None"),
   ]);
   const edgeRows = edges
     .slice()
@@ -397,7 +398,7 @@ ${diagramDataUrl ? `<section><h2>Scenario diagram</h2><img class="diagram" src="
     ? `<span style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(formatBoundaryNetworkText(boundary[key]) || "Undocumented")}</span>`
     : "Inactive (security only)"),
 ]))}</section>
-<section><h2>Node inventory</h2><p>DFD role is independent of service type. Scope excludes interiors only from LLM review, never fixed checks. Stored reasons on External Interactors are inactive.</p>${table(["Node", "Type", "DFD role / scope", "Stored scope reason", "Diagnostics", "Description", options.inventoryLabel ?? "Inventory ID", "Endpoint pattern"], nodeRows)}</section>
+<section><h2>Node inventory</h2><p>DFD role is independent of service type. Scope excludes interiors only from LLM review, never fixed checks. Stored reasons on External Interactors are inactive. Assigned endpoints are authored addresses, not verified deployment evidence.</p>${table(["Node", "Type", "DFD role / scope", "Stored scope reason", "Diagnostics", "Description", options.inventoryLabel ?? "Inventory ID", "Endpoint pattern", "Assigned endpoints"], nodeRows)}</section>
 <section><h2>Canvas text annotations</h2><p>Nonsemantic, untrusted authored context. Not assets or review findings.</p>${table(["Text", "Position (x, y)", "Size (width, height)"],
   (doc.textAnnotations ?? []).filter(annotation => scenario.textAnnotationIds?.includes(annotation.id)).map(annotation => [
     `<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(annotation.text)}</pre>`,

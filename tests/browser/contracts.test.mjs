@@ -569,6 +569,88 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
   });
 });
 
+for (const dark of [false, true]) {
+  test(`regression: public Optimize retains visible request and response privacy badges (${dark ? "dark" : "light"})`, async () => {
+    await harness.run(`regression: public Optimize privacy ${dark ? "dark" : "light"}`, async ({ page }) => {
+      if (dark) {
+        await page.getByRole("button", { name: "Settings", exact: true }).click();
+        await page.getByRole("menuitemcheckbox", { name: /Dark Theme/ }).click();
+        await page.keyboard.press("Escape");
+      }
+      const fixture = modelFixture();
+      fixture.doc.data = [
+        { id: "d_contact", name: "Contact profile", classification: "EUII", sample: "SYNTHETIC" },
+        { id: "d_subject", name: "Pseudonymous subject reference", classification: "EUPI", sample: "SYNTHETIC" },
+      ];
+      const primary = fixture.doc.scenarios[0];
+      primary.edgeRequestData = { e_request: ["d_contact", "d_subject"] };
+      primary.edgeResponseData = { e_request: ["d_contact"], e_parallel: ["d_subject"] };
+      const emptyEdge = { ...structuredClone(fixture.doc.edges[1]), id: "e_no_privacy", title: "No privacy data" };
+      fixture.doc.edges.push(emptyEdge);
+      primary.edgeIds.push(emptyEdge.id);
+      primary.edgeNumbers[emptyEdge.id] = 10;
+      for (const edge of fixture.doc.edges) edge.protocolId = "https";
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "privacy-badges.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fixture)),
+      });
+      await waitForMeasuredDiagram(page);
+      const before = await savedDiagram(page);
+      await page.getByRole("button", { name: "Optimize diagram", exact: true }).click();
+      await until(async () => (await savedDiagram(page)).past.length === before.past.length + 1, "Optimize privacy snapshot");
+      const arranged = await savedDiagram(page);
+      assert.deepEqual(declutterMeaning(arranged.doc), declutterMeaning(before.doc));
+      const assertBadges = async () => {
+        for (const [id, text] of [["e_request", "EUII +1"], ["e_parallel", "EUPI"]]) {
+          const label = page.locator(`.ps-edge-label[data-edge-id="${id}"]`);
+          const badge = label.locator(".ps-edge-classification-badge");
+          await badge.waitFor({ state: "visible" });
+          assert.ok(await badge.isVisible());
+          assert.equal(await badge.innerText(), text);
+          assert.equal(await label.locator(".ps-edge-title").textContent(), fixture.doc.edges.find(edge => edge.id === id).title);
+          const geometry = await label.evaluate(element => {
+            const outer = element.getBoundingClientRect();
+            const boxes = [...element.querySelectorAll(
+              ".ps-edge-num, .ps-edge-title, .ps-edge-protocol-badge, .ps-edge-auth-badge, .ps-edge-classification-badge",
+            )].map(child => child.getBoundingClientRect());
+            const overlaps = (a, b) => a.left < b.right - 0.1 && a.right > b.left + 0.1 &&
+              a.top < b.bottom - 0.1 && a.bottom > b.top + 0.1;
+            return {
+              contained: boxes.every(box => box.width > 0 && box.height > 0 && box.left >= outer.left &&
+                box.right <= outer.right && box.top >= outer.top && box.bottom <= outer.bottom),
+              collisions: boxes.flatMap((box, index) => boxes.slice(index + 1).filter(other => overlaps(box, other))).length,
+            };
+          });
+          assert.deepEqual(geometry, { contained: true, collisions: 0 });
+          assert.equal(await label.locator(".ps-edge-protocol-badge").isVisible(), true);
+          assert.equal(await label.locator(".ps-edge-auth-badge").isVisible(), true);
+        }
+        const empty = page.locator('.ps-edge-label[data-edge-id="e_no_privacy"]');
+        assert.equal(await empty.locator(".ps-edge-classification-badge").count(), 0);
+        assert.ok(await empty.locator(".ps-edge-protocol-badge").isVisible());
+        assert.ok(await empty.locator(".ps-edge-auth-badge").isVisible());
+        assert.equal(await page.locator(".ps-edge-label-compact").count(), 0);
+      };
+      await assertBadges();
+      const native = await exportModel(page);
+      assert.deepEqual(native.doc, arranged.doc);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      assert.deepEqual((await savedDiagram(page)).doc, before.doc);
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      await assertBadges();
+      await page.reload();
+      await waitForMeasuredDiagram(page);
+      await assertBadges();
+      assert.deepEqual((await savedDiagram(page)).doc, arranged.doc);
+      await page.locator("#ps-file-open-input").setInputFiles({
+        name: "privacy-reopened.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(native)),
+      });
+      await waitForMeasuredDiagram(page);
+      await assertBadges();
+      assert.deepEqual((await savedDiagram(page)).doc, arranged.doc);
+    });
+  });
+}
+
 test("regression: TM7 declutter retains boundary bindings and visible communication edits", async () => {
   await harness.run("regression: TM7 declutter communication and boundaries", async ({ page }) => {
     const id = i => `${String(i).padStart(8, "0")}-2222-4222-8222-222222222222`;

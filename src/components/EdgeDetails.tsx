@@ -125,7 +125,8 @@ export function EdgeDetails({ edge }: { edge: PsEdge }) {
   const selectedDefinition = authenticationCatalog.find(def => def.id === selectedAuthType);
   const managedIdentity = authTypes.some(id => authBehavior(id, authenticationCatalog).managedIdentity);
 
-  const [tab, setTab] = useDetailsTab();
+  const [storedTab, setTab] = useDetailsTab();
+  const tab = storedTab === "endpoints" ? "general" : storedTab;
 
   // Caller Application ID validity mirrors IssueManager's identity rules.
   const applicationIdRequired = edgeRequiresApplicationId(authTypes, authenticationCatalog);

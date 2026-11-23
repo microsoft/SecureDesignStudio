@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   GEO_BOUNDARY_SETTING_DEF_MAP,
   GEO_BOUNDARY_SETTING_DEFS,
@@ -56,6 +56,7 @@ export function NodeDetails({ node }: { node: PsNode }) {
   const inventoryField = inventoryFieldFor(libraries.fields);
   const {
     updateNode,
+    setNodeEndpoint,
     setNodeScopeReason,
     updateScenario,
     deleteNode,
@@ -149,6 +150,8 @@ export function NodeDetails({ node }: { node: PsNode }) {
 
   // Tab persistence shared across NodeDetails/EdgeDetails instances.
   const [tab, setTab] = useDetailsTab();
+  const [endpointError, setEndpointError] = useState("");
+  useEffect(() => { setEndpointError(""); }, [node.id]);
 
   // Indicator logic mirrors the IssueManager rules so the tab badge
   // reflects fields that would surface as an Issue.
@@ -204,7 +207,35 @@ export function NodeDetails({ node }: { node: PsNode }) {
         onChange={setTab}
         generalIncomplete={generalIncomplete}
         privacyIncomplete={privacyIncomplete}
+        showEndpoints
       />
+      {tab === "endpoints" && (
+        <section aria-label="Assigned endpoints">
+          <p className="ps-field-help" tabIndex={-1}>
+            Addresses explicitly assigned to this node through endpoint import results.
+            These are shared across scenarios, not verified API or deployment evidence.
+          </p>
+          {(node.endpoints?.length ?? 0) === 0 ? <p>No endpoints assigned to this node.</p> : (
+            <ul className="ps-node-endpoints">
+              {(node.endpoints ?? []).map(address => (
+                <li key={address}>
+                  <span>{address}</span>
+                  <button type="button" aria-label={`Remove ${address}`} onClick={event => {
+                    try {
+                      setNodeEndpoint(node.id, address, false);
+                      setEndpointError("");
+                      event.currentTarget.closest("section")?.querySelector<HTMLElement>("p")?.focus();
+                    } catch (error) {
+                      setEndpointError(error instanceof Error ? error.message : String(error));
+                    }
+                  }}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {endpointError && <p role="alert">{endpointError}</p>}
+        </section>
+      )}
       {tab === "general" && inScenario && attachedData.length > 0 && (
         <p className="ps-field-help">
           {attachedData.length} privacy data {attachedData.length === 1 ? "item is" : "items are"} recorded in this scenario.{" "}

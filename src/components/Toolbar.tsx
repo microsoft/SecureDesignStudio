@@ -34,6 +34,7 @@ import { ThreatModelDesignerDialog } from "./ThreatModelDesignerDialog";
 import { PrivacyManagerImportDialog } from "./PrivacyManagerImportDialog";
 import { VsdxExportNoticeDialog } from "./VsdxExportNoticeDialog";
 import { ImportEndpointsDialog } from "./ImportEndpointsDialog";
+import { normalizeNodeEndpoints, type EndpointImportResults } from "../nodeEndpoints";
 import { SaveAsDialog } from "./SaveAsDialog";
 import { AboutDialog } from "./AboutDialog";
 import { useLibraries } from "../libraries/LibraryProvider";
@@ -249,6 +250,7 @@ export function Toolbar() {
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [vsdxNoticeOpen, setVsdxNoticeOpen] = useState(false);
   const [endpointsDialogOpen, setEndpointsDialogOpen] = useState(false);
+  const [endpointResults, setEndpointResults] = useState<EndpointImportResults | null>(null);
   const [commandMenu, setCommandMenu] = useState<CommandMenuId | null>(null);
   const [filterDraft, setFilterDraft] = useState<FilterState>(filter);
   const [scenarioToDelete, setScenarioToDelete] = useState<string | null>(null);
@@ -858,7 +860,9 @@ export function Toolbar() {
   ) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    let openedResults = false;
     try {
+      if (f.size > 4_200_000) throw new Error("Endpoint files must be no larger than 4.2 MB.");
       const text = await f.text();
       const lines = text
         .split(/\r?\n/)
@@ -868,6 +872,8 @@ export function Toolbar() {
         window.alert("The selected file is empty.");
         return;
       }
+
+      if (lines.length > 1000) throw new Error("Import at most 1000 endpoint lines at a time.");
 
       // Extract a URL from each line. Lines may be raw URLs, or
       // request-line-style "METHOD URL [HTTP/x.y]". We grab the first
@@ -887,6 +893,7 @@ export function Toolbar() {
         pattern: string;
         policyRank: number;
       }[] = [];
+      const warnings: string[] = [];
       for (const ref of nodeTypeCatalog) {
         const def = resolveNodeTypeDef(ref.id, nodeTypeCatalog);
         if (!def) continue;
@@ -902,19 +909,22 @@ export function Toolbar() {
             policyRank: def.policyStatus === "Unspecified" ? 0 : 1,
           });
         } catch {
-          // Skip catalog entries with malformed regex — they're a data bug
-          // we shouldn't crash on during import.
+          warnings.push(`Skipped invalid endpoint expression for ${def.label}.`);
         }
       }
 
       const matchedTypeIds = new Set<string>();
+      const lineTypes = new Map<number, string>();
+      const addresses = lines.map(extractUrl);
+      normalizeNodeEndpoints(addresses);
       const ambiguousMatches: {
+        index: number;
         line: string;
         url: string;
         typeIds: string[];
       }[] = [];
       const unknownLines: string[] = [];
-      for (const line of lines) {
+      for (const [index, line] of lines.entries()) {
         const url = extractUrl(line);
         // Collect every matching regex for this URL, then pick the most
         // specific one — defined as the longest matched substring, with
@@ -963,6 +973,7 @@ export function Toolbar() {
           );
           if (best.policyRank === 0 && finalists.length > 1) {
             ambiguousMatches.push({
+              index,
               line,
               url,
               typeIds: finalists.map((candidate) => candidate.typeId),
@@ -970,6 +981,7 @@ export function Toolbar() {
             continue;
           }
           matchedTypeIds.add(best.typeId);
+          lineTypes.set(index, best.typeId);
         } else {
           unknownLines.push(line);
         }
@@ -981,6 +993,7 @@ export function Toolbar() {
           const key = match.typeIds.join("|");
           if (choiceMap.has(key)) {
             matchedTypeIds.add(choiceMap.get(key)!);
+            lineTypes.set(match.index, choiceMap.get(key)!);
             continue;
           }
           const labels = match.typeIds.map((id, index) => {
@@ -1005,6 +1018,7 @@ export function Toolbar() {
           }
           choiceMap.set(key, selected);
           matchedTypeIds.add(selected);
+          lineTypes.set(match.index, selected);
         }
       }
 
@@ -1051,9 +1065,10 @@ export function Toolbar() {
 
       // Save unknown endpoints to a sibling .txt file and let the user
       // know — they may want to add new node-type definitions for those.
+      let unknownName: string | undefined;
       if (unknownLines.length > 0) {
         const base = f.name.replace(/\.[^.]+$/, "");
-        const unknownName = `${base}_unknown.txt`;
+        unknownName = `${base}_unknown.txt`;
         const blob = new Blob([unknownLines.join("\n") + "\n"], {
           type: "text/plain",
         });
@@ -1065,27 +1080,21 @@ export function Toolbar() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        window.alert(
-          `Imported ${typesToCreate.length} new node type${
-            typesToCreate.length === 1 ? "" : "s"
-          } (${matchedTypeIds.size} matched in total).\n\n${
-            unknownLines.length
-          } endpoint${
-            unknownLines.length === 1 ? "" : "s"
-          } did not match any known node type. They have been saved to "${unknownName}" in your downloads.`
-        );
-      } else {
-        window.alert(
-          `Imported ${typesToCreate.length} new node type${
-            typesToCreate.length === 1 ? "" : "s"
-          } (${matchedTypeIds.size} matched in total). All endpoints recognized.`
-        );
       }
+      openedResults = true;
+      setEndpointResults({
+        rows: addresses.map((address, index) => {
+          const typeId = lineTypes.get(index);
+          return { address, typeId, nodeAdded: !!typeId && typesToCreate.includes(typeId) };
+        }),
+        unknownName,
+        warnings,
+      });
     } catch (err) {
       window.alert(`Failed to import endpoints: ${(err as Error).message}`);
     } finally {
       e.target.value = "";
-      restoreFileCommandFocus();
+      if (!openedResults) restoreFileCommandFocus();
     }
   };
 
@@ -3345,6 +3354,16 @@ export function Toolbar() {
           setEndpointsDialogOpen(false);
           endpointsFileRef.current?.click();
         }}
+      />
+    )}
+    {endpointResults && (
+      <ImportEndpointsDialog
+        results={endpointResults}
+        onCancel={() => {
+          setEndpointResults(null);
+          restoreCommandFocus();
+        }}
+        onChooseFile={onImportEndpointsClick}
       />
     )}
     {scenarioToDelete && (
