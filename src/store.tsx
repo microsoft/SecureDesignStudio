@@ -26,6 +26,7 @@ import { applyDesignerResult, buildDesignerContext, buildDesignPlanContext, desi
 import { createAutosaveSession, loadAutosaveRaw, saveAutosave } from "./autosave";
 import { useUiShell } from "./uiShell";
 import { resetDetailsTab } from "./components/detailsTabStore";
+import { normalizeNodeEndpoints } from "./nodeEndpoints";
 import type { ParsedPrivExp } from "./privacyManagerImport";
 import { readEmbeddedDoc } from "./embeddedDoc";
 import { mergeCatalogDefinitions, referencedCatalogDefinitions, validateCatalogDefinitions, withCatalogDefinitions } from "./catalogDefinitions";
@@ -679,6 +680,7 @@ interface StoreApi {
   // Nodes
   createNode: (position: Position) => PsNode;
   updateNode: (id: string, patch: Partial<PsNode>) => void;
+  setNodeEndpoint: (id: string, address: string, assigned: boolean) => void;
   setNodeScopeReason: (scenarioId: string, nodeId: string, reason: string, editSession?: symbol) => void;
   deleteNode: (id: string) => void;
   moveNode: (id: string, position: Position) => void;
@@ -1831,6 +1833,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [snapshot]);
 
   const updateNode = useCallback((id: string, patch: Partial<PsNode>) => {
+    if (Object.hasOwn(patch, "endpoints")) {
+      patch = { ...patch, endpoints: normalizeNodeEndpoints(patch.endpoints) };
+    }
     snapshot();
     setDoc((d) => ({
       ...d,
@@ -1851,6 +1856,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     }));
   }, [snapshot]);
+
+  const setNodeEndpoint = useCallback((id: string, address: string, assigned: boolean) => {
+    const node = documentHistoryRef.current.doc.nodes.find(item => item.id === id);
+    if (!node) throw new Error("This node no longer exists. Choose another node.");
+    const normalized = normalizeNodeEndpoints([address])![0];
+    if ((node.endpoints ?? []).includes(normalized) === assigned) return;
+    const endpoints = assigned
+      ? normalizeNodeEndpoints([...(node.endpoints ?? []), normalized])!
+      : (node.endpoints ?? []).filter(item => item !== normalized);
+    updateNode(id, { endpoints });
+  }, [updateNode]);
 
   const setNodeScopeReason = useCallback((scenarioId: string, nodeId: string, reason: string, editSession?: symbol) => {
     const state = documentHistoryRef.current;
@@ -4711,6 +4727,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setViewMode,
     createNode,
     updateNode,
+    setNodeEndpoint,
     setNodeScopeReason,
     deleteNode,
     moveNode,
@@ -5204,6 +5221,7 @@ export function normalizeDoc(
       type: textOr(n.type),
       serviceTreeId: textOr(n.serviceTreeId),
       endpointRegex: textOr(n.endpointRegex),
+      ...(n.endpoints !== undefined ? { endpoints: normalizeNodeEndpoints(n.endpoints) } : {}),
       position: positionOr(n.position),
       size: {
         width:

@@ -6,6 +6,7 @@ export interface DetailsTabsProps {
   onChange: (tab: DetailsTab) => void;
   generalIncomplete?: boolean;
   privacyIncomplete?: boolean;
+  showEndpoints?: boolean;
 }
 
 const TABS: { id: DetailsTab; label: string }[] = [
@@ -18,15 +19,17 @@ export function DetailsTabs({
   onChange,
   generalIncomplete,
   privacyIncomplete,
+  showEndpoints,
 }: DetailsTabsProps) {
   const { endReviewNavigation } = useUiShell();
   const incompleteByTab: Record<DetailsTab, boolean | undefined> = {
     general: generalIncomplete,
     privacy: privacyIncomplete,
+    endpoints: false,
   };
   return (
     <div className="ps-details-tabs" role="tablist">
-      {TABS.map((t) => {
+      {[...TABS, ...(showEndpoints ? [{ id: "endpoints" as const, label: "Endpoints" }] : [])].map((t) => {
         const active = t.id === tab;
         const incomplete = !!incompleteByTab[t.id];
         return (

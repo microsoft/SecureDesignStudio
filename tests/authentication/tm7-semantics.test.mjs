@@ -49,6 +49,15 @@ function sixNodes() {
   return doc;
 }
 
+test("TM7 endpoint assignments disclose omission without exporting addresses", () => {
+  const doc = sixNodes();
+  doc.nodes[0].endpoints = ["https://endpoint.example.invalid/private-path"];
+  const result = prepareTm7Export(doc);
+  assert.match(result.diagnostics.join("\n"), /assigned endpoints.*omitted/);
+  assert.doesNotMatch(result.xml, /endpoint\.example\.invalid|private-path/);
+  assert.deepEqual(doc.nodes[0].endpoints, ["https://endpoint.example.invalid/private-path"]);
+});
+
 test("TM7 roles: six-node native declarations/instances use E2 semantics, not titles", () => {
   const source = sixNodes(), before = structuredClone(source);
   const result = prepareTm7Export(source), root = readXml(result.xml);

@@ -6692,6 +6692,14 @@ select {
 .ps-library-metadata input { width: 100%; box-sizing: border-box; }
 .ps-endpoints-dialog { width: min(900px, calc(100vw - 24px)); }
 .ps-endpoints-dialog .ps-modal-body { overflow-wrap: anywhere; }
+.ps-endpoint-results { overflow-x: auto; }
+.ps-endpoint-results table { width: 100%; border-collapse: collapse; }
+.ps-endpoint-results th, .ps-endpoint-results td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--ps-border); }
+.ps-endpoint-results select { max-width: 100%; width: 240px; }
+.ps-endpoint-results td:first-child { min-width: 150px; overflow-wrap: anywhere; }
+.ps-node-endpoints { padding-left: 20px; }
+.ps-node-endpoints li { margin-bottom: 8px; overflow-wrap: anywhere; }
+.ps-node-endpoints button { margin-left: 8px; }
 .ps-endpoints-query-header h3 { margin: 0; font-size: inherit; }
 .ps-endpoints-library-source { font-size: 12px; color: var(--ps-text-muted); overflow-wrap: anywhere; }
 .ps-pmexp-dialog { width: min(760px, calc(100vw - 24px)); }

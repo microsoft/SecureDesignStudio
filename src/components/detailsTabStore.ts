@@ -1,4 +1,4 @@
-// Persistent state for which tab ("general" or "privacy") is active in the
+// Persistent state for which properties tab is active in the
 // right-pane details inspector. Lives outside React so it survives
 // NodeDetails/EdgeDetails being unmounted and remounted as the selection
 // changes from one element to another, and is mirrored to localStorage so
@@ -6,7 +6,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type DetailsTab = "general" | "privacy";
+export type DetailsTab = "general" | "privacy" | "endpoints";
 
 const STORAGE_KEY = "ps-details-tab";
 
@@ -14,7 +14,7 @@ function readInitial(): DetailsTab {
   if (typeof window === "undefined") return "general";
   try {
     const raw = window.localStorage?.getItem(STORAGE_KEY);
-    if (raw === "general" || raw === "privacy") return raw;
+    if (raw === "general" || raw === "privacy" || raw === "endpoints") return raw;
   } catch {
     /* localStorage may be unavailable (private mode, sandboxed iframe) */
   }

@@ -90,6 +90,15 @@ test("findings workbook exports every saved status/scenario and unaccepted AI re
   assert.deepEqual([...accepted], ["f_first"]);
 });
 
+test("node endpoint assignments are readable inert text and retained in workbook records", () => {
+  const doc = fixture();
+  doc.nodes[0].endpoints = ["https://example.invalid/<unsafe>&", "=SUM(1,2)"];
+  const result = open(createFindingsWorkbook(doc, [], new Set(), null, when));
+  const rows = result.sheet("Nodes").rows;
+  assert.equal(rows[1][rows[0].indexOf("Assigned endpoints")], doc.nodes[0].endpoints.join("\n"));
+  assert.deepEqual(JSON.parse(rows[1].at(-1)).endpoints, doc.nodes[0].endpoints);
+});
+
 test("workbook values remain inert text, with escaped XML and no external relationships or macros", () => {
   const doc = fixture();
   doc.issues[0].description = '=<unsafe>&"quoted"\n\t0000123';

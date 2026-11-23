@@ -924,8 +924,8 @@ function exportLosses(doc: PsDocument, tabs: readonly TabContent[]): string[] {
     "Canvas text annotations use standard GE.A rectangles with full plain text. Coordinates are translated per tab to a positive origin and rounded to integers; fonts and decoration are not exported. Keep .tma for exact native geometry.");
   note(doc.nodes.some(node => node.type || node.dfdRoleOverride !== undefined || node.dfdRoleLegacy !== undefined),
     "Service types, catalog defaults and role-override provenance are not retained; only the effective native DFD role is exported.");
-  note(doc.nodes.some(node => node.description || node.endpointRegex || node.metadata || node.geoBoundary || node.postSubscriptionRetention),
-    "Node descriptions, endpoint patterns and additional node metadata are omitted.");
+  note(doc.nodes.some(node => node.description || node.endpointRegex || node.endpoints?.length || node.metadata || node.geoBoundary || node.postSubscriptionRetention),
+    "Node descriptions, endpoint patterns, assigned endpoints and additional node metadata are omitted.");
   note(doc.edges.some(edge => edge.description || edge.audience || edge.constraints || edge.productionIdentity || edge.waypoints?.length),
     "Flow descriptions, audience, constraints, production identity and waypoint geometry are omitted.");
   const rightsFlows = new Set(tabs.flatMap(tab => tab.edges

@@ -148,8 +148,8 @@ export function createFindingsWorkbook(
       rows: values.map(value => [...project(value), JSON.stringify(value)]),
     });
   };
-  records("Nodes", doc.nodes, ["Node ID", "Title", "Type ID", "Description"],
-    node => [node.id, node.title, node.type ?? "", node.description ?? ""], [26, 40, 30, 70]);
+  records("Nodes", doc.nodes, ["Node ID", "Title", "Type ID", "Description", "Assigned endpoints"],
+    node => [node.id, node.title, node.type ?? "", node.description ?? "", (node.endpoints ?? []).join("\n")], [26, 40, 30, 70, 70]);
   records("Edges", doc.edges, ["Edge ID", "Title", "Source ID", "Source name", "Target ID", "Target name", "Description", "Authentication IDs", "Protocol ID", "Audience", "Constraints", "Application ID", "Required access rights"],
     edge => [edge.id, edge.title, edge.source, targetName("node", edge.source), edge.target, targetName("node", edge.target),
       edge.description, (edge.authenticationTypes ?? []).join("\n"), edge.protocolId ?? "", edge.audience ?? "",
