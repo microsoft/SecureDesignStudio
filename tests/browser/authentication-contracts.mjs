@@ -699,7 +699,10 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       await page.evaluate(key => {
         const original = Storage.prototype.setItem;
         Storage.prototype.setItem = function (name, value) {
-          if (name === key) throw new DOMException("Synthetic quota failure", "QuotaExceededError");
+          if (name === key) {
+            Storage.prototype.setItem = original;
+            throw new DOMException("Synthetic quota failure", "QuotaExceededError");
+          }
           return original.call(this, name, value);
         };
       }, libraryKey);
@@ -711,6 +714,55 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       assert.match(await modal(page).getByRole("alert").textContent(), /not saved.*storage/i);
       assert.equal(await library(page), null);
       assert.equal(await modal(page).locator("form").count(), 1, "Failed save keeps the recoverable draft");
+      await modal(page).getByRole("button", { name: "Cancel", exact: true }).click();
+      await closeLibrary(page);
+      assert.equal(await page.locator(".ps-auth-warning-trigger").count(), 0);
+      const storage = page.getByRole("button", { name: "Authentication Library storage error", exact: true });
+      await storage.click();
+      const alert = modal(page).getByRole("alert");
+      assert.match(await alert.textContent(), /Synthetic quota failure/);
+      assert.equal(await alert.evaluate(element => element === document.activeElement), true);
+      await closeLibrary(page);
+      await until(() => storage.evaluate(element => element === document.activeElement), "return to storage error");
+      await storage.click();
+      await modal(page).getByRole("searchbox").fill("API key");
+      await modal(page).getByRole("button", { name: "Disable method", exact: true }).click();
+      assert.equal((await library(page)).methods.find(method => method.id === "ApiKey").disabled, true);
+      assert.equal(await alert.count(), 0, "A successful profile write clears the previous failed write");
+      assert.equal(await storage.count(), 0);
+    });
+  });
+
+  test("regression: Authentication Library load and history errors stay separate from diagram method warnings", async () => {
+    await getHarness().run("regression: authentication profile and history recovery with a missing method", async ({ page }) => {
+      const input = modelFixture();
+      input.doc.edges[0].authenticationTypes = ["MissingProof"];
+      await uploadMeasured(page, input, "missing-proof.tma");
+      const saved = await readAutosave(page);
+      await page.addInitScript(({ libraryKey, autosaveKey, saved }) => {
+        localStorage.setItem(libraryKey, "");
+        sessionStorage.setItem(autosaveKey, JSON.stringify({
+          ...saved, past: [saved.doc], future: [], authenticationHistory: { past: [{}], future: [] },
+          classificationHistory: { past: [], future: [] },
+        }));
+      }, { libraryKey, autosaveKey, saved });
+      await page.reload();
+      const storage = page.getByRole("button", { name: "Authentication Library storage error", exact: true });
+      await storage.click();
+      const dialog = modal(page);
+      const alert = dialog.getByRole("alert");
+      assert.equal(await alert.evaluate(element => element === document.activeElement), true);
+      assert.match(await alert.innerText(), /could not be loaded from browser storage/);
+      assert.match(await alert.innerText(), /undo history could not be restored/);
+      assert.match(await page.locator(".ps-auth-warning-trigger").innerText(), /\(1\)/);
+      assert.match(await dialog.locator(".ps-auth-warnings li").innerText(), /MissingProof/);
+      await dialog.getByRole("searchbox").fill("API key");
+      await dialog.getByRole("button", { name: "Disable method", exact: true }).click();
+      assert.equal(await alert.count(), 1, "Blocked profile edits do not duplicate the load error");
+      assert.equal(await page.evaluate(key => localStorage.getItem(key), libraryKey), "");
+      await closeLibrary(page);
+      assert.deepEqual((await readAutosave(page)).doc.edges, saved.doc.edges, "Review did not change any flow");
+      assert.equal(await storage.isVisible(), true);
     });
   });
 

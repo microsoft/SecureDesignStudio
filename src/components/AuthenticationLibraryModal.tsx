@@ -146,11 +146,11 @@ function DefinitionComparison({
   );
 }
 
-export function AuthenticationLibraryModal({ onClose }: { onClose: () => void }) {
+export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusStorage: boolean; onClose: () => void }) {
   const installed = useLibraries().authentication;
   const {
     doc, authenticationLibrary, authenticationCatalog, authenticationNotices, authenticationCompatibility,
-    authenticationStorageError, saveAuthenticationMethod,
+    authenticationStorageError, authenticationHistoryError, saveAuthenticationMethod,
     setAuthenticationMethodDisabled, deleteAuthenticationMethod,
     resetAuthenticationMethod, importAuthenticationCatalog,
     useLibraryAuthenticationDefinition, undo, redo, canUndo, canRedo,
@@ -171,6 +171,7 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
   const importRef = useRef<HTMLInputElement>(null);
   const importButtonRef = useRef<HTMLButtonElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+  const storageErrorRef = useRef<HTMLDivElement>(null);
   const warningsRef = useRef<HTMLHeadingElement>(null);
   const compatibilityRef = useRef<HTMLHeadingElement>(null);
   const returnRef = useRef<HTMLElement | null>(null);
@@ -202,12 +203,13 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
   useLayoutEffect(() => {
     const target = layer === "draft" ? methodRef.current
       : layer !== "browse" ? cancelRef.current
-      : returnRef.current?.isConnected ? returnRef.current : warningsRef.current ?? compatibilityRef.current ?? searchRef.current;
+      : returnRef.current?.isConnected ? returnRef.current
+      : (focusStorage ? storageErrorRef.current : null) ?? warningsRef.current ?? storageErrorRef.current ?? compatibilityRef.current ?? searchRef.current;
     target?.focus();
-  }, [layer]);
+  }, [layer, focusStorage]);
 
   useEffect(() => {
-    if (error) errorRef.current?.focus();
+    if (error) (errorRef.current ?? storageErrorRef.current)?.focus();
   }, [error]);
 
   useEffect(() => {
@@ -405,6 +407,7 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
     <div className="ps-modal-overlay ps-fluent-dialog-overlay">
       <div
         ref={dialogRef}
+        id="ps-auth-library-dialog"
         className="ps-modal ps-auth-library"
         role={confirmation ? "alertdialog" : "dialog"}
         aria-modal="true"
@@ -422,8 +425,14 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
         </header>
         <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={readImport} />
         <div className="ps-modal-body ps-auth-library-body">
-          {authenticationStorageError && <div className="ps-auth-error" role="alert">{authenticationStorageError}</div>}
-          {error && <div ref={errorRef} className="ps-auth-error" role="alert" tabIndex={-1}>{error}</div>}
+          {(authenticationStorageError || authenticationHistoryError) && (
+            <div ref={storageErrorRef} className="ps-auth-error" role="alert" tabIndex={-1}>
+              <strong>Authentication Library storage error</strong>
+              {authenticationStorageError && <p>{authenticationStorageError}</p>}
+              {authenticationHistoryError && <p>{authenticationHistoryError}</p>}
+            </div>
+          )}
+          {error && error !== authenticationStorageError && <div ref={errorRef} className="ps-auth-error" role="alert" tabIndex={-1}>{error}</div>}
           {notice && <p className="ps-auth-notice" role="status">{notice}</p>}
           {confirmation ? (
             <section>

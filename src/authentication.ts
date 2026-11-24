@@ -312,11 +312,11 @@ export function loadAuthenticationLibrary(defaults: readonly AuthTypeDef[] = AUT
   try {
     const raw = window.localStorage.getItem(AUTHENTICATION_STORAGE_KEY);
     return {
-      methods: raw ? mergeAuthenticationLibrary(defaults, parseAuthenticationCatalog(JSON.parse(raw), defaults), defaults) : [...defaults],
+      methods: raw !== null ? mergeAuthenticationLibrary(defaults, parseAuthenticationCatalog(JSON.parse(raw), defaults), defaults) : [...defaults],
       error: null,
     };
   } catch (cause) {
-    return { methods: [...defaults], error: `Authentication Library could not be loaded: ${cause instanceof Error ? cause.message : String(cause)}. Stored data was not overwritten; export a backup before repairing browser storage.` };
+    return { methods: [...defaults], error: `Authentication Library could not be loaded from browser storage. Showing supplied methods; stored data was not overwritten. Back up the stored data before repairing browser storage, then reload. Details: ${cause instanceof Error ? cause.message : String(cause)}` };
   }
 }
 
@@ -327,14 +327,14 @@ export function persistAuthenticationLibrary(
     assertInstalledAuthenticationContracts(methods, defaults);
     if (expected) {
       const raw = window.localStorage.getItem(AUTHENTICATION_STORAGE_KEY);
-      const stored = raw ? mergeAuthenticationLibrary(defaults, parseAuthenticationCatalog(JSON.parse(raw), defaults), defaults) : defaults;
+      const stored = raw !== null ? mergeAuthenticationLibrary(defaults, parseAuthenticationCatalog(JSON.parse(raw), defaults), defaults) : defaults;
       if (JSON.stringify(stored) !== JSON.stringify(expected)) {
         throw new Error("The library changed in another tab. Reload before editing or undoing a library change; the other tab's preferences were not overwritten.");
       }
     }
     window.localStorage.setItem(AUTHENTICATION_STORAGE_KEY, exportAuthenticationCatalog(methods));
   } catch (cause) {
-    throw new Error(`Authentication Library was not saved to browser storage: ${cause instanceof Error ? cause.message : String(cause)}`);
+    throw new Error(`Authentication Library was not saved to browser storage. Check this site's storage permissions and available space before retrying. Details: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
 }
 
