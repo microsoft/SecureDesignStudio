@@ -297,6 +297,10 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       const unused = { ...supplied, behavior: { ...supplied.behavior, audience: !supplied.behavior.audience } };
       input.doc.authenticationDefinitions = [unused];
       await upload(page.locator("#ps-file-open-input"), input, "missing-definition.tma");
+      const selectionsByEdge = doc => Object.fromEntries(doc.edges.map(edge => [edge.id, edge.authenticationTypes]));
+      const beforeReview = selectionsByEdge((await exportModel(page)).doc);
+      assert.deepEqual(beforeReview.e_request, [method.id]);
+      assert.deepEqual(beforeReview.e_parallel, [method.id]);
       const trigger = reviewTrigger(page);
       const title = "Review authentication methods (1)";
       assert.equal(await trigger.innerText(), title);
@@ -324,7 +328,7 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
         "dismissal uses Model when the review trigger disappears");
       assert.equal(await trigger.count(), 0, "An unused conflicting snapshot alone is not a toolbar task");
       const afterReview = (await exportModel(page)).doc;
-      assert.deepEqual(afterReview.edges.map(edge => edge.authenticationTypes), input.doc.edges.map(edge => edge.authenticationTypes));
+      assert.deepEqual(selectionsByEdge(afterReview), beforeReview);
       assert.deepEqual(afterReview.authenticationDefinitions.find(def => def.id === unused.id), unused);
       await openLibrary(page);
       await maintenance.locator("summary").press("Enter");
