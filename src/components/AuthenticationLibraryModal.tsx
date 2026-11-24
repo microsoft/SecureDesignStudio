@@ -4,12 +4,14 @@ import { useLibraries } from "../libraries/LibraryProvider";
 import { AiDesignGuidanceDetails, AiDesignGuidanceEditor } from "./AiDesignGuidanceEditor";
 import type { AiDesignGuidance } from "../../shared/aiDesignGuidance";
 import {
+  authenticationDefinitionDifferences,
   authenticationReferences,
   authenticationVersionStatus,
   builtInAuthentication,
   installedAuthentication,
   authenticationUnavailableReason,
   assertInstalledAuthenticationContracts,
+  isInformationalAuthenticationNotice,
   isPackageAuthenticationId,
   isKnownInstalledAuthentication,
   exportAuthenticationCatalog,
@@ -19,6 +21,7 @@ import {
   uid,
   type AuthTypeDef,
   type AuthenticationCompatibility,
+  type AuthenticationNotice,
 } from "../types";
 
 type MethodDraft = {
@@ -54,7 +57,7 @@ function MethodStatus({ method, inUse }: { method: AuthTypeDef; inUse: boolean }
 }
 
 function DefinitionText({ method }: { method?: AuthTypeDef }) {
-  if (!method) return <p>Definition unavailable.</p>;
+  if (!method) return <p>No definition here.</p>;
   return (
     <dl className="ps-auth-definition">
       <dt>Method</dt>
@@ -120,13 +123,7 @@ function DefinitionComparison({
   beforeTitle: string;
   afterTitle: string;
 }) {
-  const otherChanges = before && after ? [
-    before.shortLabel !== after.shortLabel && "short display label",
-    before.disabled !== after.disabled && "enabled/disabled status",
-    JSON.stringify(before.behavior) !== JSON.stringify(after.behavior) && "analysis behavior",
-    before.legacy !== after.legacy && "legacy status",
-    JSON.stringify(before.aliases) !== JSON.stringify(after.aliases) && "compatibility aliases",
-  ].filter(Boolean) : [];
+  const differences = before && after ? authenticationDefinitionDifferences(before, after) : [];
   return (
     <>
       <div className="ps-auth-comparison">
@@ -139,8 +136,8 @@ function DefinitionComparison({
           <DefinitionText method={after} />
         </section>
       </div>
-      {otherChanges.length > 0 && (
-        <p>Other definition differences: {otherChanges.join(", ")}.</p>
+      {differences.length > 0 && (
+        <p>Definition differences: {differences.join(", ")}.</p>
       )}
     </>
   );
@@ -178,6 +175,8 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
   const importRequestRef = useRef(0);
 
   const references = useMemo(() => authenticationReferences(doc), [doc]);
+  const modelNotes = authenticationNotices.filter(isInformationalAuthenticationNotice);
+  const warnings = authenticationNotices.filter(notice => !isInformationalAuthenticationNotice(notice));
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return authenticationLibrary.filter(method =>
@@ -403,6 +402,31 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
     : confirmation?.kind === "reset" ? "Reset presentation"
     : "Use library definition in this diagram";
 
+  const renderNotice = ({ id, reason, message, saved, local }: AuthenticationNotice) => {
+    const method = authenticationCatalog.find(entry => entry.id === id);
+    return (
+      <li key={id}>
+        {message}
+        <details>
+          <summary>Review definition: {saved?.label ?? local?.label ?? id}</summary>
+          <DefinitionComparison before={saved} after={local} beforeTitle="Saved in this diagram (read-only)" afterTitle="This browser's library (read-only)" />
+          {method?.unresolved && <p>Unresolved: retained for existing selections, unavailable for new selections.</p>}
+          {method?.unavailableReason && <p>{method.unavailableReason}</p>}
+          {local ? (
+            <button type="button" disabled={pending || !!authenticationUnavailableReason(local, installed)} onClick={() => requestConfirmation("resolve", local)}>Use library definition in this diagram</button>
+          ) : (
+            <>
+              <p>{reason === "diagram-only"
+                ? "Import its catalog JSON if you want to reuse this method in other models."
+                : "This method is not in your profile. Import its Authentication Library catalog JSON first; the diagram will not be silently adopted into the library."}</p>
+              <button type="button" disabled={pending} onClick={chooseImport}>Import catalog JSON…</button>
+            </>
+          )}
+        </details>
+      </li>
+    );
+  };
+
   return (
     <div className="ps-modal-overlay ps-fluent-dialog-overlay">
       <div
@@ -484,28 +508,19 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
             </section>
           ) : readingFile ? <p role="status">Reading and validating catalog… No changes have been applied.</p> : (
             <>
-              <p>Manage one Authentication Library for this browser profile, shared across diagrams. Matching definitions in the current diagram follow library edits. Different or missing saved definitions remain unchanged until you explicitly resolve them.</p>
+              <p>Manage one Authentication Library for this browser profile, shared across diagrams. Matching definitions in the current diagram follow library edits. If the model has its own definition, it keeps that definition.</p>
               <p>Import and export JSON files to transfer or back up this library. The browser cannot write repository source JSON. Diagram-only definitions are not automatically added to your profile.</p>
-              {authenticationNotices.length > 0 && (
-                <section className="ps-auth-warnings" aria-labelledby="ps-auth-warnings-title">
-                  <h3 ref={warningsRef} id="ps-auth-warnings-title" tabIndex={-1}>Diagram authentication warnings ({authenticationNotices.length})</h3>
-                  <ul>{authenticationNotices.map(({ id, message }) => <li key={id}>{message}</li>)}</ul>
-                  {authenticationNotices.map(({ id, saved, local }) => (
-                    <details key={id}>
-                      <summary>Review definition: {saved?.label ?? local?.label ?? id}</summary>
-                      <DefinitionComparison before={saved} after={local} beforeTitle="Saved in this diagram (read-only)" afterTitle="This browser's library (read-only)" />
-                      {authenticationCatalog.find(method => method.id === id)?.unresolved && <p>Unresolved: retained for existing selections, unavailable for new selections.</p>}
-                      {authenticationCatalog.find(method => method.id === id)?.unavailableReason && <p>{authenticationCatalog.find(method => method.id === id)?.unavailableReason}</p>}
-                      {local ? (
-                        <button type="button" disabled={pending || !!authenticationUnavailableReason(local, installed)} onClick={() => requestConfirmation("resolve", local)}>Use library definition in this diagram</button>
-                      ) : (
-                        <>
-                          <p>This method is not in your profile. Import its Authentication Library catalog JSON first; the diagram will not be silently adopted into the library.</p>
-                          <button type="button" disabled={pending} onClick={chooseImport}>Import catalog JSON…</button>
-                        </>
-                      )}
-                    </details>
-                  ))}
+              {warnings.length > 0 && (
+                <section className="ps-auth-notices ps-auth-warnings" aria-labelledby="ps-auth-warnings-title">
+                  <h3 ref={warningsRef} id="ps-auth-warnings-title" tabIndex={-1}>Diagram authentication warnings ({warnings.length})</h3>
+                  <ul>{warnings.map(renderNotice)}</ul>
+                </section>
+              )}
+              {modelNotes.length > 0 && (
+                <section className="ps-auth-notices" aria-labelledby="ps-auth-notes-title">
+                  <h3 id="ps-auth-notes-title">Model authentication notes ({modelNotes.length})</h3>
+                  <p>No action is needed. This model uses its saved definitions. Comparing them does not change the model or your library.</p>
+                  <ul>{modelNotes.map(renderNotice)}</ul>
                 </section>
               )}
               {authenticationCompatibility && (

@@ -6425,7 +6425,7 @@ select {
 .ps-auth-definition dd { margin: 0 0 12px; white-space: pre-wrap; }
 .ps-auth-editor > .ps-auth-actions { margin-bottom: 12px; }
 
-.ps-auth-warnings,
+.ps-auth-notices,
 .ps-auth-compatibility,
 .ps-auth-preview-entry {
   padding: 12px;
@@ -6436,12 +6436,12 @@ select {
 .ps-auth-warnings { border-inline-start: 4px solid #9a6700; }
 .ps-auth-compatibility { margin-block: 12px; border-inline-start: 4px solid var(--ps-accent); }
 .ps-auth-compatibility.ps-auth-warnings { border-inline-start-color: #9a6700; }
-.ps-auth-warnings ul,
+.ps-auth-notices ul,
 .ps-auth-affected ul { padding-inline-start: 20px; }
-.ps-auth-warnings details { padding-block: 8px; border-top: 1px solid var(--ps-border); }
-.ps-auth-warnings summary,
+.ps-auth-notices details { padding-block: 8px; }
+.ps-auth-notices summary,
 .ps-auth-affected summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
-.ps-auth-warnings details[open] > summary,
+.ps-auth-notices details[open] > summary,
 .ps-auth-affected[open] > summary { margin-bottom: 12px; }
 .ps-auth-affected-method { padding-block: 12px; border-top: 1px solid var(--ps-border); }
 .ps-auth-affected li + li { margin-top: 12px; }

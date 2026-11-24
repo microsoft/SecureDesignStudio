@@ -45,8 +45,9 @@ for (const id of PROMOTED_METHOD_IDS) {
     assert.equal(entry.unavailableReason, undefined, "No companion library is required");
     assert.deepEqual(auth.authBehavior(id, resolved), core(id).behavior);
     assert.deepEqual(auth.withAuthenticationDefinitions(current, resolved).authenticationDefinitions, [saved]);
-    assert.match(auth.authenticationWarnings(current, installed, installed).join("\n"), /saved definition differs from your library/,
-      "A differently presented historical snapshot stays reviewable instead of being silently adopted");
+    assert.deepEqual(auth.authenticationWarnings(current, installed, installed), []);
+    assert.equal(auth.authenticationNoticesFor(current, installed, installed)[0].reason, "definition-difference",
+      "A differently presented historical snapshot stays reviewable without a warning or silent adoption");
     assert.deepEqual(current, before);
     assert.equal(JSON.stringify(current).includes("unavailableReason"), false);
     assert.ok(auth.exportAuthenticationCatalog([saved]).includes(saved.id), "Stored definitions remain exportable as data");
@@ -132,6 +133,20 @@ test("notices: presentation and diagram-only definitions are informational; unus
     [unusedConflict.id, "contract-conflict", false, false],
     [unusedUnavailable.id, "library-unavailable", false, false],
   ]);
+  assert.match(notices[0].message, /uses its own guidance for API key/);
+  assert.deepEqual(notices.filter(auth.isInformationalAuthenticationNotice).map(notice => notice.id), [presentation.id, diagramOnly.id]);
+});
+
+test("notices: mixed custom settings name each difference without treating it as a protected contract conflict", () => {
+  const local = definition();
+  const saved = { ...local, description: "Model-specific description.", behavior: { ...local.behavior, audience: true },
+    disabled: true, aiDesignGuidance: { content: "Model-specific guidance.", revision: 1, updatedOn: "2026-01-01" } };
+  const doc = withFlow([saved.id]);
+  doc.authenticationDefinitions = [saved];
+  const [note] = auth.authenticationNoticesFor(doc, [local]);
+  assert.equal(note.reason, "definition-difference");
+  assert.match(note.message, /description, AI design guidance, enabled\/disabled status, analysis behavior\./);
+  assert.deepEqual(auth.authenticationWarnings(doc, [local]), []);
 });
 
 test("availability: identity aliases remain protected and portable data cannot supply authority", () => {
