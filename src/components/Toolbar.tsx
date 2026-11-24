@@ -140,7 +140,7 @@ export function Toolbar() {
     documentSessionId,
     nodeTypeCatalog,
     authenticationCatalog,
-    authenticationWarnings,
+    authenticationNotices,
     authenticationStorageError,
     classificationDefinitions,
     availableCatalogDefinitions,
@@ -2599,7 +2599,7 @@ export function Toolbar() {
           )}
         </div>
 
-        {(authenticationWarnings.length > 0 || authenticationStorageError) && (
+        {(authenticationNotices.length > 0 || authenticationStorageError) && (
           <button
             type="button"
             className="ps-command-domain ps-auth-warning-trigger"
@@ -2607,7 +2607,7 @@ export function Toolbar() {
             title="Review authentication definitions and library storage warnings"
             onClick={() => executeCommand("model.authentication")}
           >
-            Authentication warnings ({authenticationWarnings.length + (authenticationStorageError ? 1 : 0)})
+            Authentication warnings ({authenticationNotices.length + (authenticationStorageError ? 1 : 0)})
           </button>
         )}
 

@@ -129,14 +129,14 @@ import { normalizeEntityMetadata } from "./libraries/validation";
 import { inventoryIdError, inventoryFieldFor } from "./inventoryIdentity";
 import { allowedAuthMethodsForNode } from "./policy";
 import {
-  authenticationCatalogFor, authenticationCompatibilityFor, authenticationReferences, authenticationWarnings,
+  authenticationCatalogFor, authenticationCompatibilityFor, authenticationNoticesFor, authenticationReferences,
   builtInAuthentication, installedAuthentication, isPackageAuthenticationId, authenticationUnavailableReason,
   assertInstalledAuthenticationContracts, validatePortableAuthenticationDefinitions,
   isAuthenticationType, loadAuthenticationLibrary,
   mergeAuthenticationLibrary, normalizeAuthenticationValue, parseAuthenticationCatalog,
   persistAuthenticationLibrary, sameAuthenticationDefinition, validateAuthenticationDefinitions,
   withAuthenticationDefinitions, withAuthenticationGuidance, UNKNOWN_AUTH_BEHAVIOR,
-  type AuthTypeDef, type AuthenticationCompatibility,
+  type AuthTypeDef, type AuthenticationCompatibility, type AuthenticationNotice,
 } from "./authentication";
 import {
   loadProtocolLibrary, persistProtocolLibrary, validateProtocolDefinitions, validateProtocolReference,
@@ -585,7 +585,7 @@ interface StoreApi {
   applyProtocolLibrary: (next: readonly ProtocolTypeDef[], expected: readonly ProtocolTypeDef[]) => void;
   useLibraryProtocolDefinition: (id: string) => void;
   authenticationCatalog: readonly AuthTypeDef[];
-  authenticationWarnings: string[];
+  authenticationNotices: readonly AuthenticationNotice[];
   authenticationCompatibility: AuthenticationCompatibility | null;
   authenticationStorageError: string | null;
   catalogSnapshotError: string | null;
@@ -1241,8 +1241,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const authenticationCatalog = useMemo(
     () => authenticationCatalogFor(doc, authenticationLibrary, libraries.authentication), [doc, authenticationLibrary, libraries],
   );
-  const authWarnings = useMemo(
-    () => authenticationWarnings(doc, authenticationLibrary, libraries.authentication), [doc, authenticationLibrary, libraries],
+  const authenticationNotices = useMemo(
+    () => authenticationNoticesFor(doc, authenticationLibrary, libraries.authentication), [doc, authenticationLibrary, libraries],
   );
   const authenticationCompatibility = useMemo(
     () => authenticationCompatibilityFor(doc, authenticationLibrary), [doc, authenticationLibrary],
@@ -4665,7 +4665,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     applyProtocolLibrary,
     useLibraryProtocolDefinition,
     authenticationCatalog,
-    authenticationWarnings: authWarnings,
+    authenticationNotices,
     authenticationCompatibility,
     authenticationStorageError,
     catalogSnapshotError,

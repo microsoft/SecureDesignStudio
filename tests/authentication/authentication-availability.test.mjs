@@ -2,7 +2,7 @@ import "./collaboration-loader.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as Y from "yjs";
-import { IDS, withFlow, historicalAuthenticationDefinitions, PROMOTED_METHOD_IDS } from "./catalog-fixtures.mjs";
+import { IDS, definition, withFlow, withPolicy, historicalAuthenticationDefinitions, PROMOTED_METHOD_IDS } from "./catalog-fixtures.mjs";
 
 const auth = await import("../../src/authentication.ts");
 const types = await import("../../src/types.ts");
@@ -89,6 +89,49 @@ test("availability: portable conflicting behavior is retained but cannot clear i
   const restored = analyze({ ...doc, authenticationDefinitions: [canonical] }, installed);
   assert.equal(restored.issues.find(issue => issue.id === "i_retained").notEvaluatedReason, "rule-retired");
   assert.equal(restored.issues.find(issue => issue.id === "i_retained").status, "Resolved");
+});
+
+test("notices: each referenced method has one cause across flows and policy rules", () => {
+  const conflict = core("ApiKey");
+  conflict.behavior.audience = !conflict.behavior.audience;
+  const missing = definition();
+  const unavailableId = PROMOTED_METHOD_IDS[0];
+  const doc = withPolicy([
+    { id: conflict.id, status: "Allowed" }, { id: missing.id, status: "Deprecated" }, { id: "*", status: "Allowed" },
+  ], [conflict.id, conflict.id, unavailableId, "AnonymousAccess"]);
+  doc.edges.push({ ...doc.edges[0], id: "another-flow" });
+  doc.authenticationDefinitions = [conflict];
+  const library = [...reducedRuntime, missing];
+  const before = structuredClone({ doc, library });
+  const notices = auth.authenticationNoticesFor(doc, library, reducedRuntime);
+  assert.deepEqual(notices.map(({ id, reason, referenced, actionable }) => [id, reason, referenced, actionable]), [
+    [conflict.id, "contract-conflict", true, true],
+    [unavailableId, "library-unavailable", true, true],
+    [missing.id, "missing-definition", true, true],
+  ]);
+  assert.deepEqual(notices[0].saved, conflict);
+  assert.deepEqual(notices[0].local, core(conflict.id));
+  assert.equal(notices[2].saved, undefined);
+  assert.deepEqual(notices[2].local, missing, "A same-ID profile entry is a repair option, not an adopted definition");
+  assert.deepEqual(auth.authenticationWarnings(doc, library, reducedRuntime), notices.map(notice => notice.message));
+  assert.deepEqual({ doc, library }, before);
+});
+
+test("notices: presentation and diagram-only definitions are informational; unused unavailable snapshots stay reviewable", () => {
+  const presentation = { ...core("ApiKey"), aiDesignGuidance: { content: "Saved guidance only.", revision: 1, updatedOn: "2026-01-01" } };
+  const diagramOnly = definition();
+  const unusedConflict = core("EntraManagedIdentity");
+  unusedConflict.behavior.audience = !unusedConflict.behavior.audience;
+  const unusedUnavailable = historical(PROMOTED_METHOD_IDS[0]);
+  const doc = withFlow([presentation.id, diagramOnly.id]);
+  doc.authenticationDefinitions = [presentation, diagramOnly, unusedConflict, unusedUnavailable, core("AnonymousAccess")];
+  const notices = auth.authenticationNoticesFor(doc, reducedRuntime, reducedRuntime);
+  assert.deepEqual(notices.map(({ id, reason, referenced, actionable }) => [id, reason, referenced, actionable]), [
+    [presentation.id, "definition-difference", true, false],
+    [diagramOnly.id, "diagram-only", true, false],
+    [unusedConflict.id, "contract-conflict", false, false],
+    [unusedUnavailable.id, "library-unavailable", false, false],
+  ]);
 });
 
 test("availability: identity aliases remain protected and portable data cannot supply authority", () => {
