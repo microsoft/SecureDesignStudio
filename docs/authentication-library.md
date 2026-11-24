@@ -308,6 +308,12 @@ the local and saved versions, then explicitly use the library definition in
 the current diagram when appropriate. This operation does not rewrite other
 files or change the local library. Definitions imported with diagrams do not
 automatically become reusable library entries.
+The warning list and its per-method comparisons use one derived notice per
+stable ID, even across multiple flows and named node-policy rules. A notice
+is marked actionable only for a referenced missing definition, unavailable
+library, or conflict with the installed contract. Other definition differences
+and valid diagram-only methods do not require repair. Unused unavailable
+snapshots remain reviewable; these notices are not saved in the diagram.
 
 ### Core defaults and optional definitions
 

@@ -149,7 +149,7 @@ function DefinitionComparison({
 export function AuthenticationLibraryModal({ onClose }: { onClose: () => void }) {
   const installed = useLibraries().authentication;
   const {
-    doc, authenticationLibrary, authenticationCatalog, authenticationWarnings, authenticationCompatibility,
+    doc, authenticationLibrary, authenticationCatalog, authenticationNotices, authenticationCompatibility,
     authenticationStorageError, saveAuthenticationMethod,
     setAuthenticationMethodDisabled, deleteAuthenticationMethod,
     resetAuthenticationMethod, importAuthenticationCatalog,
@@ -184,17 +184,6 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
     ).sort((a, b) => a.label.localeCompare(b.label));
   }, [authenticationLibrary, query]);
   const selected = filtered.find(method => method.id === selectedId) ?? filtered[0];
-  const definitionReviews = useMemo(() => [...new Set([
-    ...references,
-    ...(doc.authenticationDefinitions ?? []).filter(method => authenticationUnavailableReason(method, installed)).map(method => method.id),
-  ])].flatMap(id => {
-    const saved = doc.authenticationDefinitions?.find(method => method.id === id);
-    const local = authenticationLibrary.find(method => method.id === id);
-    const missing = !saved && !installedAuthentication(id, installed);
-    const unavailable = authenticationCatalog.find(method => method.id === id)?.unavailableReason;
-    if (!unavailable && !missing && (!saved || (local && sameAuthenticationDefinition(saved, local)))) return [];
-    return [{ id, saved, local, label: saved?.label ?? local?.label ?? id }];
-  }), [doc.authenticationDefinitions, authenticationLibrary, authenticationCatalog, installed, references]);
   const versionStatus = authenticationCompatibility
     ? authenticationVersionStatus(__PS_VERSION__, authenticationCompatibility.minimumVersion) : null;
 
@@ -488,13 +477,13 @@ export function AuthenticationLibraryModal({ onClose }: { onClose: () => void })
             <>
               <p>Manage one Authentication Library for this browser profile, shared across diagrams. Matching definitions in the current diagram follow library edits. Different or missing saved definitions remain unchanged until you explicitly resolve them.</p>
               <p>Import and export JSON files to transfer or back up this library. The browser cannot write repository source JSON. Diagram-only definitions are not automatically added to your profile.</p>
-              {authenticationWarnings.length > 0 && (
+              {authenticationNotices.length > 0 && (
                 <section className="ps-auth-warnings" aria-labelledby="ps-auth-warnings-title">
-                  <h3 ref={warningsRef} id="ps-auth-warnings-title" tabIndex={-1}>Diagram authentication warnings ({authenticationWarnings.length})</h3>
-                  <ul>{authenticationWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
-                  {definitionReviews.map(({ id, saved, local, label }) => (
+                  <h3 ref={warningsRef} id="ps-auth-warnings-title" tabIndex={-1}>Diagram authentication warnings ({authenticationNotices.length})</h3>
+                  <ul>{authenticationNotices.map(({ id, message }) => <li key={id}>{message}</li>)}</ul>
+                  {authenticationNotices.map(({ id, saved, local }) => (
                     <details key={id}>
-                      <summary>Review definition: {label}</summary>
+                      <summary>Review definition: {saved?.label ?? local?.label ?? id}</summary>
                       <DefinitionComparison before={saved} after={local} beforeTitle="Saved in this diagram (read-only)" afterTitle="This browser's library (read-only)" />
                       {authenticationCatalog.find(method => method.id === id)?.unresolved && <p>Unresolved: retained for existing selections, unavailable for new selections.</p>}
                       {authenticationCatalog.find(method => method.id === id)?.unavailableReason && <p>{authenticationCatalog.find(method => method.id === id)?.unavailableReason}</p>}

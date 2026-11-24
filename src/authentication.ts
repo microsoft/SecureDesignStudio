@@ -183,17 +183,37 @@ export function sameAuthenticationContract(a: AuthTypeDef, b: AuthTypeDef): bool
     && JSON.stringify(a.aliases) === JSON.stringify(b.aliases);
 }
 
+const authenticationNoticeMessages = {
+  "library-unavailable": "Required authentication library is unavailable. Existing data is retained; this method cannot be selected for new calls.",
+  "contract-conflict": "Saved authentication behavior differs from the installed contract. Existing data is retained; explicitly adopt the installed definition before selecting this method.",
+  "missing-definition": "definition missing; existing values are preserved. Import a definition, then explicitly use it in this diagram.",
+  "definition-difference": "saved definition differs from your library. The diagram keeps its saved definition until you explicitly use the library definition.",
+  "diagram-only": "available from this diagram only. Import its catalog JSON to reuse it in other diagrams.",
+};
+
+export interface AuthenticationNotice {
+  id: AuthenticationType;
+  reason: keyof typeof authenticationNoticeMessages;
+  referenced: boolean;
+  actionable: boolean;
+  message: string;
+  saved?: AuthTypeDef;
+  local?: AuthTypeDef;
+}
+
+function authenticationUnavailableCause(
+  id: AuthenticationType, definition: AuthTypeDef | undefined, canonical: AuthTypeDef | undefined,
+): "library-unavailable" | "contract-conflict" | undefined {
+  if (!canonical && isPackageAuthenticationId(id)) return "library-unavailable";
+  if (canonical && definition && !sameAuthenticationContract(definition, canonical)) return "contract-conflict";
+  return undefined;
+}
+
 export function authenticationUnavailableReason(
   definition: AuthTypeDef, installed: readonly AuthTypeDef[] = AUTH_TYPE_DEFS,
 ): string | undefined {
-  const canonical = installedAuthentication(definition.id, installed);
-  if (isPackageAuthenticationId(definition.id) && !canonical) {
-    return "Required authentication library is unavailable. Existing data is retained; this method cannot be selected for new calls.";
-  }
-  if (canonical && !sameAuthenticationContract(definition, canonical)) {
-    return "Saved authentication behavior differs from the installed contract. Existing data is retained; explicitly adopt the installed definition before selecting this method.";
-  }
-  return undefined;
+  const cause = authenticationUnavailableCause(definition.id, definition, installedAuthentication(definition.id, installed));
+  return cause && authenticationNoticeMessages[cause];
 }
 
 export function assertInstalledAuthenticationContracts(
@@ -509,29 +529,43 @@ export function authenticationCompatibilityFor(
   };
 }
 
+export function authenticationNoticesFor(
+  doc: PsDocument, library: readonly AuthTypeDef[], installed: readonly AuthTypeDef[] = AUTH_TYPE_DEFS,
+): AuthenticationNotice[] {
+  const references = authenticationReferences(doc);
+  const savedById = new Map((doc.authenticationDefinitions ?? []).map(def => [def.id, def]));
+  const localById = new Map(library.map(def => [def.id, def]));
+  const installedById = new Map(installed.map(def => [def.id, def]));
+  const notices: AuthenticationNotice[] = [];
+  for (const id of new Set([...references, ...savedById.keys()])) {
+    const referenced = references.has(id);
+    const saved = savedById.get(id);
+    const local = localById.get(id);
+    const canonical = installedById.get(id);
+    const unavailable = authenticationUnavailableCause(id, saved ?? local, canonical);
+    // Keep unused, unavailable snapshots reachable for explicit repair.
+    if (!referenced && !unavailable) continue;
+    let reason: AuthenticationNotice["reason"];
+    if (unavailable) reason = unavailable;
+    else if (!saved && !canonical) reason = "missing-definition";
+    else if (saved && !local) reason = "diagram-only";
+    else if (saved && local && !sameAuthenticationDefinition(saved, local)) reason = "definition-difference";
+    else continue;
+    const text = reason === "library-unavailable" && !saved && !local
+      ? "Required authentication library is unavailable; existing references are retained."
+      : authenticationNoticeMessages[reason];
+    notices.push({
+      id, reason, referenced, actionable: referenced && (!!unavailable || reason === "missing-definition"),
+      message: `${id}: ${text}`, saved, local,
+    });
+  }
+  return notices;
+}
+
 export function authenticationWarnings(
   doc: PsDocument, library: readonly AuthTypeDef[], installed: readonly AuthTypeDef[] = AUTH_TYPE_DEFS,
 ): string[] {
-  const saved = new Map((doc.authenticationDefinitions ?? []).map(def => [def.id, def]));
-  const messages: string[] = [];
-  const reviewIds = authenticationReferences(doc);
-  for (const definition of saved.values()) {
-    if (authenticationUnavailableReason(definition, installed)) reviewIds.add(definition.id);
-  }
-  for (const id of reviewIds) {
-    const definition = saved.get(id);
-    const local = library.find(def => def.id === id);
-    const resolved = definition ?? local;
-    const unavailable = resolved ? authenticationUnavailableReason(resolved, installed)
-      : isPackageAuthenticationId(id) && !installedAuthentication(id, installed)
-        ? "Required authentication library is unavailable; existing references are retained." : undefined;
-    if (unavailable) messages.push(`${id}: ${unavailable}`);
-    else if (!definition && !installedAuthentication(id, installed)) messages.push(`${id}: definition missing; existing values are preserved. Import a definition, then explicitly use it in this diagram.`);
-    else if (definition && local && !sameAuthenticationDefinition(definition, local)) {
-      messages.push(`${id}: saved definition differs from your library. The diagram keeps its saved definition until you explicitly use the library definition.`);
-    } else if (definition && !local) messages.push(`${id}: available from this diagram only. Import its catalog JSON to reuse it in other diagrams.`);
-  }
-  return messages;
+  return authenticationNoticesFor(doc, library, installed).map(notice => notice.message);
 }
 
 export function normalizeAuthenticationValue(value: unknown, definitions: readonly AuthTypeDef[] = AUTH_TYPE_DEFS): AuthenticationType | undefined {
