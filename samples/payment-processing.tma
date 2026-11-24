@@ -20,7 +20,22 @@
         "legacy": false,
         "aliases": [
           "Microsoft Entra ID - delegated user access"
-        ]
+        ],
+        "aiDesignGuidance": {
+          "content": "Entra user: delegated user access with a Microsoft Entra access token.\nScope: a client application calls the receiving API with an access token issued for a signed-in user and delegated permissions (scopes). A middle tier exchanging an incoming user token for a downstream call is the separate OBO method.\nParties: the signed-in user; the client application (caller, identified by its application/client ID); Microsoft Entra ID (issuer); the receiving API (resource named by the token's aud claim).\nAcquisition (before this flow): the client signs the user in, typically with the authorization code flow plus PKCE, and requests delegated scopes for the API; the user or an administrator consents. The resource owner password grant must not be used and the implicit grant should not be used (RFC 9700).\nPresentation (on this flow): the access token, normally in the HTTP Authorization header. Unless proof-of-possession is configured it is a bearer token: anyone holding it can use it until it expires, so it belongs only on TLS connections and out of URLs and logs.\nReceiver validation: the API validates, while clients treat access tokens as opaque. The API checks signature and issuer against the tenant's OpenID Connect metadata, aud equal to this API, tid an allowed tenant, expiry, and scp containing the required delegated scope, then authorizes the user (for example oid with roles or groups) for the requested data. An ID token is not meant for calling an API, and accepting a token issued for another resource is a confused-deputy flaw.\nAuthentication vs authorization: the token authenticates the user and client; it does not decide resource-level access. Both the client and the user must be authorized, and the app cannot reach anything the user could not. TLS protects the hop but does not authenticate the caller.\nSDS fields: Caller Application ID (applicationId) is required and holds the calling client's application ID GUID, not the API's identifier or an object ID. It is never inferred; an unknown ID, tenant, scope or consent stays unknown until the owner supplies it. Audience (audience) names the receiving API, for example its App ID URI, and Required access rights (requiredAccessRights) the delegated scopes and user roles; in proposed designs these usually appear in the flow description.\nQuestions: Which client app and tenants? Which scopes and user roles are required? Is the token sent only to its intended API? Are tokens or claims logged?\nLimits: reference only; not evidence that the deployment issues, presents or validates tokens this way.",
+          "sources": [
+            "https://learn.microsoft.com/en-us/entra/identity-platform/permissions-consent-overview",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/id-tokens",
+            "https://www.rfc-editor.org/rfc/rfc6750",
+            "https://www.rfc-editor.org/rfc/rfc9700"
+          ],
+          "revision": 1,
+          "updatedOn": "2026-10-31"
+        }
       },
       {
         "id": "EntraOnBehalfOf",
@@ -36,7 +51,19 @@
         },
         "disabled": false,
         "legacy": false,
-        "aliases": []
+        "aliases": [],
+        "aiDesignGuidance": {
+          "content": "Entra on-behalf-of (OBO): a middle-tier API exchanges an incoming user token for a downstream token that still represents the user.\nScope: this flow is normally the middle tier's call to the downstream API; the upstream client-to-middle-tier call is usually Entra user. Which hop the flow models needs confirmation.\nParties: the signed-in user; the original client app; middle-tier API A (caller on this flow, a confidential client with its own credential); Microsoft Entra ID (issuer); downstream API B (receiver).\nAcquisition (before this flow): API A receives a user access token whose aud must be API A; a token issued for another resource cannot be redeemed and should be rejected. API A authenticates to the Entra token endpoint with its client secret or a certificate-signed client assertion and sends the incoming token as the assertion, with grant_type urn:ietf:params:oauth:grant-type:jwt-bearer (registered by RFC 7523), requested_token_use=on_behalf_of and scopes for API B. This is the Microsoft identity platform's profile; generic token-exchange semantics are not implied. Because the middle tier cannot prompt the user, consent for API B is obtained up front.\nPresentation (on this flow): API A sends the new access token (aud = API B), typically as a bearer token. Tokens issued to the middle tier must not be relayed to the client or to any party other than their intended audience.\nReceiver validation: API B validates it like any delegated user token: signature, issuer, aud equal to API B, tenant, expiry and scp, then authorization of the user. OBO carries delegated scopes only; app roles stay with the user and never transfer to the middle tier.\nConstraints: OBO works only for user principals. With an app-only incoming token, the middle tier uses client credentials (Entra app) instead, so an OBO label on an app-only chain is a modeling mismatch. Single-page apps pass their token to a middle-tier confidential client rather than performing OBO themselves.\nAuthentication vs authorization: the token authenticates the user together with the middle-tier client; API B still authorizes the operation. TLS protects each hop but does not replace token validation.\nSDS fields: Caller Application ID (applicationId) is required and holds API A's client ID GUID; it is never inferred, and an unknown ID stays unknown until the owner supplies it. Audience (audience) names API B and Required access rights (requiredAccessRights) the downstream delegated scopes; in proposed designs these usually appear in the flow description. A matching upstream flow carries a user token whose audience is API A.\nQuestions: Which credential does API A use and how is it protected? Which downstream scopes are consented? How are Conditional Access or step-up challenges returned to the user? Are tokens cached per user and never shared?\nLimits: reference only; not evidence of consent, token validation or exchange behavior in the deployment.",
+          "sources": [
+            "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/certificate-credentials",
+            "https://www.rfc-editor.org/rfc/rfc7523"
+          ],
+          "revision": 1,
+          "updatedOn": "2026-10-31"
+        }
       },
       {
         "id": "ClientCertificateMtls",
@@ -52,7 +79,19 @@
         },
         "disabled": false,
         "legacy": false,
-        "aliases": []
+        "aliases": [],
+        "aiDesignGuidance": {
+          "content": "Client certificate (mTLS): the calling service presents an X.509 client certificate directly to the receiving service during mutual TLS.\nScope: distinct from using a certificate to obtain an Entra token, from OAuth tokens bound to a certificate, and from the legacy ambiguous Certificate authentication method.\nParties: the caller (TLS client) holding the certificate and private key; the issuing CA or a pinned self-signed key; the receiver (TLS server, or whichever component terminates TLS).\nAcquisition (before this flow): a certificate is issued or provisioned to the caller, with its private key protected (for example in a key store or hardware module) and a renewal and rotation process.\nPresentation (on this flow): in TLS 1.3 the server sends CertificateRequest; the client returns its Certificate and a CertificateVerify signature over the handshake, proving possession of the private key. TLS always authenticates the server but authenticates the client only when the server requests it, so the receiver has to require it.\nReceiver validation: the receiver validates the certification path to a trusted anchor, validity dates, key usage or extended key usage and revocation status (CRL or OCSP), then maps the certificate identity (subject, SAN, issuer, or a pinned thumbprint or key) to an authorized caller. Trusting a whole public or shared CA without identity mapping admits any certificate it issued.\nTermination: when TLS ends at a load balancer, gateway or platform front end, the application sees a forwarded certificate rather than the handshake. Azure App Service, for example, terminates TLS at its front end and passes the client certificate in the X-ARR-ClientCert header, and the app must validate it. Gateways such as Azure API Management can validate issuer, subject, thumbprint and revocation by policy.\nAuthentication vs authorization: mTLS authenticates the TLS peer for that hop and protects the channel; which certificate identities may perform which operations is a separate authorization decision. It carries no user identity.\nSDS fields: no Audience field; Caller Application ID (applicationId) is optional and never inferred. Trusted issuers or pinned identities, revocation approach and termination point usually appear in the flow description, and permitted operations in Required access rights (requiredAccessRights). The communication profile is expected to be TLS-based.\nQuestions: Which CA or pinned keys are trusted? How is the certificate identity authorized? How are expiry, rotation and revocation handled? Where does TLS terminate? Can callers bypass the front end or inject the forwarded-certificate header, and are downstream hops authenticated?\nLimits: reference only; not evidence that the receiver requires or validates client certificates.",
+          "sources": [
+            "https://www.rfc-editor.org/rfc/rfc8446",
+            "https://www.rfc-editor.org/rfc/rfc5280",
+            "https://learn.microsoft.com/en-us/azure/app-service/app-service-web-configure-tls-mutual-auth",
+            "https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-mutual-certificates-for-clients",
+            "https://www.rfc-editor.org/rfc/rfc8705"
+          ],
+          "revision": 1,
+          "updatedOn": "2026-10-31"
+        }
       },
       {
         "id": "EntraManagedIdentity",
@@ -68,7 +107,19 @@
         },
         "disabled": false,
         "legacy": false,
-        "aliases": []
+        "aliases": [],
+        "aiDesignGuidance": {
+          "content": "Managed identity: an Azure-managed identity obtains a Microsoft Entra access token without a developer-managed secret.\nScope: code running on an Azure resource uses that resource's managed identity to get a token, then calls a receiver that supports Microsoft Entra authentication. For workloads outside Azure, Federated workload identity is the relevant method.\nParties: the hosting Azure resource and its code (caller); the managed identity, a special service principal in Entra; the platform token endpoint and Microsoft Entra ID (issuer); the receiving resource or API.\nVariants: a system-assigned identity is created on one resource, shares its lifecycle and only that resource can use it. A user-assigned identity is a standalone resource that can be attached to several resources; when more than one is attached, the token request selects one (client_id, object_id or resource ID).\nAcquisition (before this flow): the code requests a token for the target resource from a local platform endpoint, for example the Azure Instance Metadata Service at 169.254.169.254 on virtual machines, which requires a Metadata: true header as a server-side request forgery mitigation. The credential itself is not accessible to developers.\nPresentation (on this flow): the resulting Entra access token, typically as a bearer token in the Authorization header.\nReceiver validation: as for application tokens: signature, issuer, aud equal to this resource, tenant and expiry, then authorization of the identity's service principal through Azure RBAC role assignments, app roles or an allow-list. No signed-in user is represented.\nSecurity considerations: anyone who can install or execute code on the hosting resource can use every identity assigned to it, so least privilege and control over code deployment matter. Managed identity tokens are cached by the platform, so role or group changes can take hours to apply and refresh cannot be forced.\nAuthentication vs authorization: the token authenticates the managed identity; role assignments decide access. TLS protects the hop but does not authenticate the caller.\nSDS fields: the managed-identity profile means Caller Application ID (applicationId) is not required, and SDS asks for confirmation when one is also recorded. Audience (audience) names the target resource and Required access rights (requiredAccessRights) the needed role assignments or app roles; in proposed designs these usually appear in the flow description.\nQuestions: System- or user-assigned, on which hosting resource? Which role assignments exist on the target, at what scope? Who can deploy code to the host? Does the target support Entra authentication?\nLimits: reference only; not evidence that an identity or role assignment exists.",
+          "sources": [
+            "https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview",
+            "https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/how-to-use-vm-token",
+            "https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/managed-identity-best-practice-recommendations",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens",
+            "https://learn.microsoft.com/en-us/entra/identity-platform/claims-validation"
+          ],
+          "revision": 1,
+          "updatedOn": "2026-10-31"
+        }
       }
     ],
     "catalogDefinitions": [
