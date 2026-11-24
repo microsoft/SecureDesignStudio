@@ -544,7 +544,8 @@ browser save picker or download dialog. **File > Open** replaces the model;
 A model can save the definitions it uses so another reviewer can read their
 labels and descriptions without installing the same library.
 If a saved definition differs from an installed one, the saved definition wins
-for that diagram. Review the notice before replacing it.
+for that diagram. Before replacing a saved definition, open **About** and expand
+**Catalog labels in this diagram** below **Custom Libraries** to review it.
 
 **(unresolved)** means a definition is unavailable. The app retains its ID
 instead of guessing a replacement. It does not install a missing library.

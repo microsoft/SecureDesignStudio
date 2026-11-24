@@ -4950,6 +4950,16 @@ select {
   margin: 0;
 }
 
+.ps-catalog-snapshots {
+  align-self: stretch;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.ps-catalog-snapshots summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .ps-theme-dark .ps-about-summary,
 .ps-theme-dark .ps-about-details dt {
   color: var(--ps-text-muted);
@@ -6512,19 +6522,6 @@ select {
   .ps-auth-library-body,
   .ps-auth-footer { padding: 10px; }
   .ps-auth-footer > .ps-auth-actions { width: 100%; }
-}
-.ps-catalog-snapshots {
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--ps-border, #d1d5db);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.ps-catalog-snapshots[open] {
-  max-height: 25vh;
-  overflow: auto;
-}
-.ps-catalog-snapshots summary {
-  cursor: pointer;
 }
 .ps-classification-library-status {
   padding: 4px 12px;

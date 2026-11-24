@@ -176,9 +176,9 @@ installed same-ID field.
 For taxonomy, portable meaning is keyed by `(kind, id)` and carries `label`,
 optional `description`, and optional library ID/version, not arbitrary
 executable metadata. A saved snapshot wins even when its library is absent
-or a same-ID installed label/description differs; **Saved catalog definitions**
-distinguishes that conflict from a document-only definition. Without a
-snapshot, an available same-ID definition can be captured as local fallback.
+or a same-ID installed label/description differs. **Catalog labels in this diagram**
+in **About** distinguishes that conflict from a document-only definition. Without
+a snapshot, an available same-ID definition can be captured as local fallback.
 That fallback cannot reconstruct the original author's missing meaning.
 Saved `defaultDfdRole` definitions likewise win over installed defaults.
 New/adopted nodes capture a known role default, including public catalog

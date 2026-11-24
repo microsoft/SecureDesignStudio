@@ -40,7 +40,6 @@ import { AboutDialog } from "./AboutDialog";
 import { useLibraries } from "../libraries/LibraryProvider";
 import { inventoryFieldFor } from "../inventoryIdentity";
 import { withCatalogDefinitions } from "../catalogDefinitions";
-import { CatalogDefinitionsNotice } from "./CatalogDefinitionsNotice";
 import { AuthenticationLibraryModal } from "./AuthenticationLibraryModal";
 import { ClassificationLibraryModal } from "./ClassificationLibraryModal";
 import { ProtocolLibraryModal } from "./ProtocolLibraryModal";
@@ -146,6 +145,8 @@ export function Toolbar() {
     classificationDefinitions,
     availableCatalogDefinitions,
     classificationStorageError,
+    documentRecoveryError,
+    catalogSnapshotError,
     activeScenarioId,
     activeScenario,
     setActiveScenarioId,
@@ -185,6 +186,7 @@ export function Toolbar() {
     viewMode,
     setViewMode,
   } = useStore();
+  const catalogError = documentRecoveryError ?? catalogSnapshotError;
   const {
     inspectorVisible,
     inspectorActiveTab,
@@ -3227,7 +3229,7 @@ export function Toolbar() {
       </div>
      </div>
     </header>
-    <CatalogDefinitionsNotice />
+    {catalogError && <p className="ps-catalog-error" role="alert">{catalogError}</p>}
     {classificationStorageError && (
       <p className="ps-catalog-error ps-classification-library-status" role="alert">{classificationStorageError}</p>
     )}
