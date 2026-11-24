@@ -203,7 +203,8 @@ test("auth guidance: saved-first resolution and explicit clears never resurrect 
     cleared.authenticationDefinitions, "Re-capture never refills a cleared saved definition");
   const reopened = normalizeDoc(JSON.parse(JSON.stringify(cleared)));
   assert.equal(Object.hasOwn(find(auth.authenticationCatalogFor(reopened, profile, installed), "ApiKey"), "aiDesignGuidance"), false);
-  assert.match(auth.authenticationWarnings(reopened, profile, installed).join("\n"), /saved definition differs.*keeps its saved definition/i);
+  assert.deepEqual(auth.authenticationWarnings(reopened, profile, installed), []);
+  assert.match(auth.authenticationNoticesFor(reopened, profile, installed)[0].message, /no saved guidance for API key/);
   assert.equal(auth.authenticationUnavailableReason(find(reopened.authenticationDefinitions, "ApiKey"), installed), undefined);
   assert.equal(auth.edgeRequiresApplicationId(["ApiKey"], auth.authenticationCatalogFor(reopened, profile, installed)), false);
 });

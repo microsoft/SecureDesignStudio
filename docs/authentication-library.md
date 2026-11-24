@@ -311,20 +311,26 @@ Resolution is deterministic:
    even if the same ID happens to exist in the local library. The ID, legacy
    array and identity evidence are retained; a definition is not guessed.
 
-The UI reports same-ID/different-definition collisions and missing dependencies.
-These remain **Diagram authentication warnings**, independent of the running
-application version, with explicit definition-review controls.
+Under **Model > Customize authentication**, **Model authentication notes**
+shows which saved methods differ from this browser's library and which exist
+only in the model. Expand **Review definition** to compare read-only copies.
+The note names what differs, such as a display name, description, AI design
+guidance, or a custom method's analysis behavior. These are not toolbar
+warnings: the model uses its saved definition and no adoption or import is
+needed. To reuse a model-only method in other models, import its catalog JSON
+into your profile.
+
 Importing a library does not overwrite conflicting saved definitions. Review
 the local and saved versions, then explicitly use the library definition in
 the current diagram when appropriate. This operation does not rewrite other
 files or change the local library. Definitions imported with diagrams do not
 automatically become reusable library entries.
-The warning list and its per-method comparisons use one derived notice per
-stable ID, even across multiple flows and named node-policy rules. A notice
-is marked actionable only for a referenced missing definition, unavailable
-library, or conflict with the installed contract. Other definition differences
-and valid diagram-only methods do not require repair. Unused unavailable
-snapshots remain reviewable; these notices are not saved in the diagram.
+
+Missing referenced definitions, unavailable libraries and conflicts with an
+installed contract still have separate definition warnings. Unused unavailable
+snapshots remain reviewable for maintenance. Each notice is derived once per
+stable ID, even across multiple flows and named node-policy rules; it is not
+saved in the diagram.
 
 ### Core defaults and optional definitions
 

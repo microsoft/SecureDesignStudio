@@ -349,7 +349,7 @@ describe("authentication catalog: saved dependencies and library resolution", ()
     ]), /Duplicate/);
   });
 
-  test("saved definitions override different local definitions and produce a conflict warning", () => {
+  test("a saved display name overrides the profile name without requiring repair", () => {
     const saved = definition({ label: "Saved proof" });
     const local = definition({ label: "Local proof" });
     const doc = withFlow([saved.id]);
@@ -357,7 +357,9 @@ describe("authentication catalog: saved dependencies and library resolution", ()
     const library = [...auth.AUTH_TYPE_DEFS, local];
     const before = clone({ doc, library });
     assert.deepEqual(find(auth.authenticationCatalogFor(doc, library), saved.id), saved);
-    assert.match(auth.authenticationWarnings(doc, library).join("\n"), /saved definition differs.*keeps its saved definition/i);
+    assert.deepEqual(auth.authenticationWarnings(doc, library), []);
+    const [note] = auth.authenticationNoticesFor(doc, library);
+    assert.match(note.message, /Saved proof differs from the browser library: display name\./);
     assert.deepEqual(auth.withAuthenticationDefinitions(doc, library).authenticationDefinitions, [saved]);
     assert.deepEqual({ doc, library }, before);
   });
@@ -399,12 +401,12 @@ describe("authentication catalog: saved dependencies and library resolution", ()
     assert.deepEqual(auth.withAuthenticationDefinitions(saved, []).authenticationDefinitions, saved.authenticationDefinitions);
   });
 
-  test("document-only and identical definitions produce distinct accurate warning states", () => {
+  test("only a document-only definition produces a note; neither it nor an identical definition warns", () => {
     const doc = withFlow(["ContosoProofV1"]);
     doc.authenticationDefinitions = [definition()];
-    assert.match(auth.authenticationWarnings(doc, []).join("\n"), /diagram only/i);
-    const identical = auth.authenticationWarnings(doc, [definition()]);
-    assert.deepEqual(identical, []);
+    assert.deepEqual(auth.authenticationWarnings(doc, []), []);
+    assert.match(auth.authenticationNoticesFor(doc, [])[0].message, /model includes its own definition for Contoso proof/);
+    assert.deepEqual(auth.authenticationNoticesFor(doc, [definition()]), []);
     const modern = auth.authenticationWarnings(withFlow(["ApiKey"]), auth.AUTH_TYPE_DEFS);
     assert.deepEqual(modern, []);
     assert.deepEqual(auth.authenticationWarnings(withFlow(["EntraApplicationOnlyAccess"]), auth.AUTH_TYPE_DEFS), []);

@@ -11,7 +11,7 @@ const { AUTH_TYPE_DEFS, PRODUCTION_IDENTITY_TENANT_DEFS, DATA_CLASSIFICATIONS, R
 const { containsRect, overlapRatio, nodeRect, boundaryRect } = await import("../../src/boundaryGeometry.ts");
 const { resolveDfdRole, resolveNodeReviewScope, resolveFlowReviewScope } = await import("../../src/dfdSemantics.ts");
 const { buildDfdReviewContext } = await import("../../src/dfdReviewContext.ts");
-const { authenticationWarnings, withAuthenticationDefinitions } = await import("../../src/authentication.ts");
+const { authenticationNoticesFor, withAuthenticationDefinitions } = await import("../../src/authentication.ts");
 const { withCatalogDefinitions } = await import("../../src/catalogDefinitions.ts");
 const { PROTOCOL_TYPE_DEFS, resolveProtocolReference, withProtocolDefinitions } = await import("../../src/protocols.ts");
 const { isAuthoredThreatNote } = await import("../../src/threatNotes.ts");
@@ -47,8 +47,8 @@ for (const file of sampleFiles) {
     }
     assert.deepEqual(normalizeDoc(JSON.parse(JSON.stringify(normalized))), normalized,
       "The complete native model is normalization-idempotent");
-    assert.deepEqual(authenticationWarnings(normalized, AUTH_TYPE_DEFS, AUTH_TYPE_DEFS), [],
-      "Opening the sample with the shipped authentication catalog must not produce warnings");
+    assert.deepEqual(authenticationNoticesFor(normalized, AUTH_TYPE_DEFS, AUTH_TYPE_DEFS), [],
+      "Gallery samples must match the shipped library, including display metadata and guidance");
     assert.deepEqual(withCatalogDefinitions(withAuthenticationDefinitions(normalized, AUTH_TYPE_DEFS)), normalized,
       "Saved dependencies are complete without replacing profile libraries");
     assert.deepEqual(withProtocolDefinitions(normalized, PROTOCOL_TYPE_DEFS), normalized,

@@ -123,7 +123,7 @@ test("compatibility: duplicate display labels never merge IDs and saved definiti
   assert.deepEqual(report.methods.map(method => method.label), [saved.label, saved.label]);
   assert.deepEqual(report.methods.map(method => method.id), [saved.id, second.id]);
   assert.deepEqual(report.methods[0].nodeTypePolicies.map(policy => policy.id), ["nt_second", "nt_test"]);
-  assert.match(authenticationWarnings(doc, [local]).join("\n"), /saved definition differs/);
+  assert.deepEqual(authenticationWarnings(doc, [local]), [], "Neither a different display name nor a valid document-only method needs repair");
 });
 
 test("compatibility: missing definitions use resolver fallback, not a fabricated local name", () => {

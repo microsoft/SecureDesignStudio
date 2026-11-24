@@ -5,7 +5,7 @@ import {
   useStore,
   type FilterState,
 } from "../store";
-import { dataClassificationLabel, resolveNodeTypeDef, uid, withAuthenticationDefinitions } from "../types";
+import { dataClassificationLabel, isInformationalAuthenticationNotice, resolveNodeTypeDef, uid, withAuthenticationDefinitions } from "../types";
 import {
   AUTOSAVE_INTERVAL_OPTIONS,
   useUiShell,
@@ -189,6 +189,7 @@ export function Toolbar() {
     setViewMode,
   } = useStore();
   const catalogError = documentRecoveryError ?? catalogSnapshotError;
+  const authenticationWarningCount = authenticationNotices.filter(notice => !isInformationalAuthenticationNotice(notice)).length;
   const {
     inspectorVisible,
     inspectorActiveTab,
@@ -2602,7 +2603,7 @@ export function Toolbar() {
           )}
         </div>
 
-        {authenticationNotices.length > 0 && (
+        {authenticationWarningCount > 0 && (
           <button
             type="button"
             className="ps-command-domain ps-auth-warning-trigger"
@@ -2610,7 +2611,7 @@ export function Toolbar() {
             title="Review diagram authentication definitions"
             onClick={() => executeCommand("model.authentication")}
           >
-            Authentication warnings ({authenticationNotices.length})
+            Authentication warnings ({authenticationWarningCount})
           </button>
         )}
         {(authenticationStorageError || authenticationHistoryError) && (
