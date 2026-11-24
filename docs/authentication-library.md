@@ -39,6 +39,17 @@ An already-open tab reloads to pick up another tab's library edits. A stale
 tab cannot overwrite newer preferences through a library edit or Undo/Redo;
 it reports the conflict and asks for a reload.
 
+**Authentication Library storage error** opens details about the browser
+profile, separate from the diagram's method-warning count. If the library
+could not be loaded, the editor shows supplied methods without overwriting
+stored data. Back up the stored profile before repairing it, then reload.
+If a save, Undo or Redo could not write the library, the change was not
+applied. Check the reported cause and retry. Opening the library does not
+clear the error; a successful profile write clears a previous save failure.
+If an individual undo-history entry could not be restored, its recovery
+message is also shown. These errors do not change flow selections or indicate
+an authentication failure on a modeled flow.
+
 [`src/data/authTypes.json`](../src/data/authTypes.json) remains the maintainable
 shipped defaults. Source edits require rebuilding. The browser downloads
 `secure-design-studio-authentication-catalog.json`; it cannot overwrite that

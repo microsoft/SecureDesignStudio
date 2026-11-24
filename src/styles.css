@@ -6325,7 +6325,8 @@ select {
 .ps-auth-library button:hover:not(:disabled) { border-color: var(--ps-accent); }
 
 .ps-auth-library :is(button, input, textarea, summary):focus-visible,
-.ps-auth-warning-trigger:focus-visible {
+.ps-auth-warning-trigger:focus-visible,
+.ps-auth-storage-trigger:focus-visible {
   outline: 2px solid var(--ps-fluent-focus);
   outline-offset: 2px;
 }
@@ -6506,13 +6507,15 @@ select {
   border-color: var(--ps-fluent-brand-hover);
 }
 
-.ps-command-nav .ps-auth-warning-trigger {
+.ps-command-nav .ps-auth-warning-trigger,
+.ps-command-nav .ps-auth-storage-trigger {
   max-width: 100%;
   white-space: normal;
   color: var(--ps-text, #6d5700);
   border: 1px solid var(--ps-border);
   border-inline-start: 3px solid #9a6700;
 }
+.ps-command-nav .ps-auth-storage-trigger { border-inline-start-color: var(--ps-danger); }
 
 @media (max-width: 640px) {
   .ps-auth-layout,

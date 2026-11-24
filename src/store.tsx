@@ -588,6 +588,7 @@ interface StoreApi {
   authenticationNotices: readonly AuthenticationNotice[];
   authenticationCompatibility: AuthenticationCompatibility | null;
   authenticationStorageError: string | null;
+  authenticationHistoryError: string | null;
   catalogSnapshotError: string | null;
   documentRecoveryError: string | null;
   classificationLibrary: ClassificationLibrary;
@@ -1012,7 +1013,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [libraries],
   );
   const [authenticationLibrary, setAuthenticationLibraryState] = useState(libraryInitial.methods);
-  const [authenticationStorageError, setAuthenticationStorageError] = useState(libraryInitial.error);
+  const [authenticationSaveError, setAuthenticationSaveError] = useState<string | null>(null);
+  const authenticationStorageError = libraryInitial.error ?? authenticationSaveError;
   const [catalogSnapshotError, setCatalogSnapshotError] = useState<string | null>(null);
   const autosaveSession = useMemo(() => createAutosaveSession(readEmbeddedDoc()), []);
   const libraryRef = useRef(authenticationLibrary);
@@ -1020,6 +1022,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     libraryRef.current = next;
     setAuthenticationLibraryState(next);
   }, []);
+  const tryPersistAuthenticationLibrary = useCallback((methods: AuthTypeDef[], operation: "Save" | "Undo" | "Redo") => {
+    if (libraryInitial.error) return libraryInitial.error;
+    try {
+      persistAuthenticationLibrary(methods, libraryRef.current, libraries.authentication);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      const message = operation === "Save" ? detail : `${operation} was not applied. ${detail}`;
+      setAuthenticationSaveError(message);
+      return message;
+    }
+    setAuthenticationSaveError(null);
+    return null;
+  }, [libraries.authentication, libraryInitial.error]);
   // Rehydrate from autosave once on mount. If anything is malformed we
   // fall back to a blank doc so a corrupt entry can never white-screen the
   // app. History entries are best-effort: bad ones are dropped, good ones
@@ -1194,7 +1209,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { doc, past, future, activeScenarioId, filter };
   }
   useEffect(() => {
-    if (initial?.historyError) setAuthenticationStorageError(initial.historyError);
     if (initial?.classificationHistoryError) setClassificationStorageError(initial.classificationHistoryError);
   }, [initial]);
   const [documentRecoveryError, setDocumentRecoveryError] = useState(initial?.recoveryError ?? null);
@@ -1659,10 +1673,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ordinarySnapshot: null,
       scopeReasonEdit: null,
     };
-    if (prev.authenticationLibrary) {
-      try { persistAuthenticationLibrary(prev.authenticationLibrary, currentLibrary, libraries.authentication); }
-      catch (cause) { setAuthenticationStorageError((cause as Error).message); return; }
-    }
+    if (prev.authenticationLibrary && tryPersistAuthenticationLibrary(prev.authenticationLibrary, "Undo")) return;
     if (prev.classificationLibrary) {
       try { persistClassificationLibrary(prev.classificationLibrary, currentClassifications, undefined, libraries.classifications); }
       catch (cause) { setClassificationStorageError((cause as Error).message); return; }
@@ -1676,7 +1687,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setClassificationRecoveryRaw(null);
     }
     restoreHistorySelection({ ...prev, doc: restoredDoc }, current);
-  }, [restoreHistorySelection, libraries, updateDocumentHistory, setAuthenticationLibrary, setClassificationLibrary]);
+  }, [restoreHistorySelection, libraries, updateDocumentHistory, tryPersistAuthenticationLibrary, setAuthenticationLibrary, setClassificationLibrary]);
 
   const redo = useCallback(() => {
     const state = documentHistoryRef.current;
@@ -1707,10 +1718,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ordinarySnapshot: null,
       scopeReasonEdit: null,
     };
-    if (next.authenticationLibrary) {
-      try { persistAuthenticationLibrary(next.authenticationLibrary, currentLibrary, libraries.authentication); }
-      catch (cause) { setAuthenticationStorageError((cause as Error).message); return; }
-    }
+    if (next.authenticationLibrary && tryPersistAuthenticationLibrary(next.authenticationLibrary, "Redo")) return;
     if (next.classificationLibrary) {
       try { persistClassificationLibrary(next.classificationLibrary, currentClassifications, undefined, libraries.classifications); }
       catch (cause) { setClassificationStorageError((cause as Error).message); return; }
@@ -1724,7 +1732,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setClassificationRecoveryRaw(null);
     }
     restoreHistorySelection({ ...next, doc: restoredDoc }, current);
-  }, [restoreHistorySelection, libraries, updateDocumentHistory, setAuthenticationLibrary, setClassificationLibrary]);
+  }, [restoreHistorySelection, libraries, updateDocumentHistory, tryPersistAuthenticationLibrary, setAuthenticationLibrary, setClassificationLibrary]);
 
   // Replace the current document with a fresh empty one. Snapshots first so
   // the user can recover with Ctrl+Z. Also clears all view state that's
@@ -4182,10 +4190,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const commitAuthenticationLibrary = useCallback((methods: AuthTypeDef[]) => {
     const validated = validateAuthenticationDefinitions(methods, libraries.authentication);
-    if (libraryInitial.error) throw new Error(libraryInitial.error);
     // Persist first: a storage failure must not create a success-shaped edit.
     const before = libraryRef.current;
-    persistAuthenticationLibrary(validated, before, libraries.authentication);
+    const error = tryPersistAuthenticationLibrary(validated, "Save");
+    if (error) throw new Error(error);
     snapshot(true);
     setDoc(current => ({
       ...current,
@@ -4196,8 +4204,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     }));
     setAuthenticationLibrary(validated);
-    setAuthenticationStorageError(null);
-  }, [snapshot, libraryInitial.error]);
+  }, [libraries.authentication, setAuthenticationLibrary, setDoc, snapshot, tryPersistAuthenticationLibrary]);
 
   const saveAuthenticationMethod = useCallback((method: { id: string; label: string; description: string; aiDesignGuidance?: AiDesignGuidance }) => {
     if (!isAuthenticationType(method.id)) throw new Error("Invalid authentication ID.");
@@ -4668,6 +4675,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authenticationNotices,
     authenticationCompatibility,
     authenticationStorageError,
+    authenticationHistoryError: initial?.historyError ?? null,
     catalogSnapshotError,
     documentRecoveryError,
     classificationLibrary,

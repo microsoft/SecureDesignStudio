@@ -103,6 +103,7 @@ type CommandId =
   | "file.design"
   | "model.annotation"
   | "model.authentication"
+  | "model.authenticationStorage"
   | "model.classifications"
   | "model.protocols"
   | "model.customLibraries"
@@ -142,6 +143,7 @@ export function Toolbar() {
     authenticationCatalog,
     authenticationNotices,
     authenticationStorageError,
+    authenticationHistoryError,
     classificationDefinitions,
     availableCatalogDefinitions,
     classificationStorageError,
@@ -242,7 +244,7 @@ export function Toolbar() {
   const [designerOpen, setDesignerOpen] = useState(false);
   const designerReturnRef = useRef<string>("ps-command-menu-file");
   const [nodeTypeCatalogOpen, setNodeTypeCatalogOpen] = useState(false);
-  const [authenticationLibraryOpen, setAuthenticationLibraryOpen] = useState(false);
+  const [authenticationLibraryOpen, setAuthenticationLibraryOpen] = useState<"library" | "storage" | null>(null);
   const [classificationLibraryOpen, setClassificationLibraryOpen] = useState(false);
   const [protocolLibraryOpen, setProtocolLibraryOpen] = useState(false);
   const [customLibrariesOpen, setCustomLibrariesOpen] = useState(false);
@@ -1747,8 +1749,9 @@ export function Toolbar() {
         break;
       }
       case "model.authentication":
+      case "model.authenticationStorage":
         restoreFocus = false;
-        setAuthenticationLibraryOpen(true);
+        setAuthenticationLibraryOpen(id === "model.authenticationStorage" ? "storage" : "library");
         break;
       case "model.classifications":
         restoreFocus = false;
@@ -2599,15 +2602,27 @@ export function Toolbar() {
           )}
         </div>
 
-        {(authenticationNotices.length > 0 || authenticationStorageError) && (
+        {authenticationNotices.length > 0 && (
           <button
             type="button"
             className="ps-command-domain ps-auth-warning-trigger"
             aria-haspopup="dialog"
-            title="Review authentication definitions and library storage warnings"
+            title="Review diagram authentication definitions"
             onClick={() => executeCommand("model.authentication")}
           >
-            Authentication warnings ({authenticationNotices.length + (authenticationStorageError ? 1 : 0)})
+            Authentication warnings ({authenticationNotices.length})
+          </button>
+        )}
+        {(authenticationStorageError || authenticationHistoryError) && (
+          <button
+            type="button"
+            className="ps-command-domain ps-auth-storage-trigger"
+            aria-haspopup="dialog"
+            aria-controls="ps-auth-library-dialog"
+            title={authenticationStorageError ?? authenticationHistoryError ?? undefined}
+            onClick={() => executeCommand("model.authenticationStorage")}
+          >
+            Authentication Library storage error
           </button>
         )}
 
@@ -3272,9 +3287,11 @@ export function Toolbar() {
     )}
     {authenticationLibraryOpen && (
       <AuthenticationLibraryModal
+        focusStorage={authenticationLibraryOpen === "storage"}
         onClose={() => {
-          setAuthenticationLibraryOpen(false);
-          restoreCommandFocus("ps-command-menu-model");
+          setAuthenticationLibraryOpen(null);
+          restoreCommandFocus(authenticationLibraryOpen === "storage" && (authenticationStorageError || authenticationHistoryError)
+            ? "ps-auth-library-dialog" : "ps-command-menu-model");
         }}
       />
     )}

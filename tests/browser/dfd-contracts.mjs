@@ -614,19 +614,27 @@ export function registerDfdContracts({ getHarness, exportModel }) {
         assert.deepEqual(queued.authenticationLibrary, baseline.authenticationLibrary, "Same-turn profile mutation is visible to Undo preflight");
         const authApplied = await commitAtomicStore(page, () => window.atomicStore.redo());
         assert.ok(authApplied.authenticationLibrary.some(method => method.id === "SyntheticAtomicAuth"));
-        const failure = await commitAtomicStore(page, () => {
+        const denyHistoryWrite = operation => commitAtomicStore(page, operation => {
           const original = Storage.prototype.setItem;
           Storage.prototype.setItem = function(key, value) {
             if (key.includes("authentication")) throw new Error("Synthetic storage denial");
             return original.call(this, key, value);
           };
-          try { window.atomicStore.undo(); } finally { Storage.prototype.setItem = original; }
-        });
-        assert.match(failure.authenticationStorageError, /Synthetic storage denial/);
+          try { window.atomicStore[operation](); } finally { Storage.prototype.setItem = original; }
+        }, operation);
+        const failure = await denyHistoryWrite("undo");
+        assert.match(failure.authenticationStorageError, /Undo was not applied.*Synthetic storage denial/);
         for (const key of ["doc", "authenticationLibrary", "canUndo", "canRedo"]) assert.deepEqual(failure[key], authApplied[key]);
         assert.deepEqual(failure.saved.past, authApplied.saved.past);
         assert.deepEqual(failure.saved.future, authApplied.saved.future);
-        await commitAtomicStore(page, () => window.atomicStore.undo());
+        const retry = await commitAtomicStore(page, () => window.atomicStore.undo());
+        assert.equal(retry.authenticationStorageError, null);
+        const redoFailure = await denyHistoryWrite("redo");
+        assert.match(redoFailure.authenticationStorageError, /Redo was not applied.*Synthetic storage denial/);
+        for (const key of ["doc", "authenticationLibrary", "canUndo", "canRedo"]) assert.deepEqual(redoFailure[key], retry[key]);
+        const redoRetry = await commitAtomicStore(page, () => window.atomicStore.redo());
+        assert.equal(redoRetry.authenticationStorageError, null);
+        assert.deepEqual(redoRetry.authenticationLibrary, authApplied.authenticationLibrary);
 
         const beforeClassification = await readAtomicStore(page);
         const next = structuredClone(beforeClassification.classificationLibrary);
