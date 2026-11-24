@@ -3,19 +3,21 @@ import { catalogDefinitionKey } from "../catalogDefinitions";
 import { useStore } from "../store";
 
 export function CatalogDefinitionsNotice() {
-  const { doc, catalogSnapshotError, documentRecoveryError, availableCatalogDefinitions } = useStore();
+  const { doc, availableCatalogDefinitions } = useStore();
   const saved = doc.catalogDefinitions ?? [];
-  if (documentRecoveryError) return <p className="ps-catalog-error" role="alert">{documentRecoveryError}</p>;
-  if (catalogSnapshotError) return <p className="ps-catalog-error" role="alert">{catalogSnapshotError}</p>;
   if (!saved.length) return null;
   return (
     <details className="ps-catalog-snapshots">
-      <summary>Saved catalog definitions ({saved.length})</summary>
+      <summary>Catalog labels in this diagram</summary>
       <p>
-        Saved definitions apply only to this diagram and take precedence over
-        installed labels. They do not install a library or verify security,
-        compliance, or publisher identity. Unavailable IDs without a snapshot
-        remain unresolved. Readers before 0.1.26 may discard these definitions.
+        These labels and descriptions travel with the diagram so it stays readable
+        when a library is missing or uses different wording. The saved wording
+        applies only to this diagram. It does not install a library, grant access,
+        or verify security, compliance, or publisher identity.
+      </p>
+      <p>
+        An ID with no saved or installed definition stays unresolved.
+        Versions before 0.1.26 may discard saved definitions.
       </p>
       <ul>
         {saved.map((definition) => {

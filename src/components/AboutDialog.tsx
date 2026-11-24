@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import secureDesignStudioLogo from "../assets/secure-design-studio-logo.svg?inline";
+import { CatalogDefinitionsNotice } from "./CatalogDefinitionsNotice";
 import { LibraryDetails, LibrarySummary } from "./LibraryDetails";
 import { SERVICES } from "../services";
 import templateNotice from "../data/vsdxTemplateNotice.json";
@@ -82,6 +83,9 @@ export function AboutDialog({ onClose, showLibraries = false }: { onClose: () =>
               <dd>{__PS_VERSION__}</dd>
             </div>
             <div><dt>Custom Libraries</dt><dd><LibrarySummary /></dd></div>
+          </dl>
+          <CatalogDefinitionsNotice />
+          <dl className="ps-about-details">
             <div><dt>Service configuration</dt><dd className="ps-service-notice">{SERVICES.source}</dd></div>
             <div><dt>Collaboration service</dt><dd className="ps-service-notice" role={SERVICES.collaboration.state === "invalid" ? "alert" : undefined}>
               {SERVICES.collaboration.message}

@@ -153,9 +153,15 @@ test("production: standalone Authentication Library definition and version survi
       "ExampleRestricted");
     assert.equal(await reopened.getByRole("combobox", { name: "Classification for Synthetic request", exact: true })
       .locator("option:checked").textContent(), "Partner restricted data (saved)");
-    await reopened.locator(".ps-catalog-snapshots summary").click();
-    await reopened.locator(".ps-catalog-snapshots").getByText(input.doc.catalogDefinitions[0].description, { exact: true }).waitFor();
-    await reopened.locator(".ps-catalog-snapshots summary").click();
+    assert.equal(await reopened.locator(".ps-catalog-snapshots").count(), 0);
+    await reopened.getByRole("button", { name: "About", exact: true }).click();
+    const about = reopened.getByRole("dialog", { name: "About SecureDesignStudio", exact: true });
+    const labels = about.locator(".ps-catalog-snapshots");
+    assert.equal(await labels.getAttribute("open"), null);
+    const summary = labels.getByText("Catalog labels in this diagram", { exact: true });
+    await summary.press("Enter");
+    await labels.getByText(input.doc.catalogDefinitions[0].description, { exact: true }).waitFor();
+    await summary.press("Escape");
     await reopened.getByRole("tab", { name: /^Edges/ }).click();
     await reopened.getByRole("row", { name: /^Parallel flow, sequence/ }).click();
     await reopened.getByRole("tab", { name: /^Properties/ }).click();

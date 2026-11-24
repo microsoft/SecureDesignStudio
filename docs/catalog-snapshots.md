@@ -88,10 +88,12 @@ definition in this diagram** action can replace a differing saved classification
 definition without changing IDs or profile preferences. Library transactions and
 this diagram-only action remain separate Undo steps.
 
-The **Saved catalog definitions** disclosure shows document-only entries,
-differences from installed definitions, and unverified library metadata.
-Descriptions are rendered as text/safe existing rich-text content, never raw
-executable HTML. A saved label does not change classification ranking,
+In **About**, expand **Catalog labels in this diagram** below **Custom Libraries**
+to read saved labels and descriptions, differences from installed definitions,
+document-only entries, and unverified library metadata. The section appears only
+when the diagram has saved labels. Recovery and autosave errors still appear in
+the workspace. Descriptions in About are plain text, never executable HTML.
+A saved label does not change classification ranking,
 authentication behavior, or the meaning of explicit policy IDs. Unfamiliar
 classifications retain neutral canvas styling.
 
