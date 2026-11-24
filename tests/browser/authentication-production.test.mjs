@@ -131,6 +131,12 @@ test("production: standalone Authentication Library definition and version survi
     reopened.on("pageerror", error => faults.push(error.message));
     await reopened.goto(pathToFileURL(exportedFile).href);
     assert.equal(await reopened.locator(".ps-command-version").textContent(), `v${version}`);
+    const reviewTitle = "Review authentication methods (1)";
+    await reopened.getByRole("button", { name: reviewTitle, exact: true }).press("Enter");
+    const review = reopened.getByRole("region", { name: reviewTitle, exact: true });
+    assert.deepEqual(await review.locator("summary").allTextContents(), [`Review definition: ${retainedContract.label}`],
+      "Only the referenced contract conflict, not the portable model-only method, needs repair after reopening");
+    await reopened.keyboard.press("Escape");
     await reopened.locator('.react-flow__node-process[data-id="n_client"] .ps-node-title').click();
     assert.equal(await reopened.getByRole("textbox", { name: "Inventory ID", exact: true }).inputValue(), input.doc.nodes[0].serviceTreeId);
     assert.equal(await reopened.getByRole("textbox", { name: "EndpointRegex", exact: true }).inputValue(), input.doc.nodes[0].endpointRegex);

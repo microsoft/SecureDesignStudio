@@ -568,7 +568,9 @@ export function authenticationNoticesFor(
         : authenticationAvailabilityMessages[unavailable];
     } else if (!saved && !canonical) {
       reason = "missing-definition";
-      text = "definition missing; existing values are preserved. Import a definition, then explicitly use it in this diagram.";
+      text = local
+        ? "definition missing in this diagram; existing values are preserved. Review the browser definition, then explicitly use it in this diagram."
+        : "definition missing; existing values are preserved. Import a definition, then explicitly use it in this diagram.";
     } else if (saved && !local) {
       reason = "diagram-only";
       text = `This model includes its own definition for ${saved.label}. It is not in this browser's library.`;

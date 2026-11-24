@@ -707,7 +707,7 @@ the resulting model edits are shared with the room.
 | Cannot create nodes or boundaries | Create and select a scenario first. Show all is not an authoring scenario. |
 | Cannot attach data | Check classification, request/response direction, and receiver policy. Do not weaken policy just to remove a warning. |
 | Recovery missing or storage full | Save `.tma`. Check the browser profile, site address, and storage permissions. Back up before clearing site data. |
-| Unknown authentication or differing definitions | In **Model > Customize authentication**, review warnings for missing or unavailable methods and installed-contract conflicts. **Model authentication notes** describes valid saved differences that need no action. **Affected items** lists where methods are used; a compatibility notice is not an authentication failure. |
+| Unknown authentication or differing definitions | **Review authentication methods (N)** opens the list of referenced methods that are missing, unavailable or conflict with an installed contract. In **Model > Customize authentication**, **Unused saved definitions** is for maintenance and **Model authentication notes** explains valid saved differences that need no action. **Affected items** lists where methods are used; a compatibility notice is not an authentication failure. |
 | Collaboration unavailable locally | Expected: local modes do not enable collaboration. Use an approved deployed or standalone copy configured for rooms. |
 | AI analysis disabled with a model open | Select a specific scenario rather than Show all, then check provider configuration. |
 | Inspector hidden or on the wrong tab | **View > Inspector** reopens it; **View > Properties** returns to details. Unpin the tab if you want it to follow selection. |
