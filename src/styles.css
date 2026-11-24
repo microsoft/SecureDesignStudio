@@ -6325,7 +6325,7 @@ select {
 .ps-auth-library button:hover:not(:disabled) { border-color: var(--ps-accent); }
 
 .ps-auth-library :is(button, input, textarea, summary):focus-visible,
-.ps-auth-warning-trigger:focus-visible,
+.ps-auth-review-trigger:focus-visible,
 .ps-auth-storage-trigger:focus-visible {
   outline: 2px solid var(--ps-fluent-focus);
   outline-offset: 2px;
@@ -6507,7 +6507,7 @@ select {
   border-color: var(--ps-fluent-brand-hover);
 }
 
-.ps-command-nav .ps-auth-warning-trigger,
+.ps-command-nav .ps-auth-review-trigger,
 .ps-command-nav .ps-auth-storage-trigger {
   max-width: 100%;
   white-space: normal;

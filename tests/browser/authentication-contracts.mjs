@@ -6,6 +6,7 @@ import { until } from "./harness.mjs";
 
 const libraryKey = "secure-design-studio:authentication-library:v1";
 const modal = page => page.locator(".ps-auth-library");
+const reviewTrigger = page => page.getByRole("button", { name: /^Review authentication methods \(\d+\)$/ });
 const selector = page => page.getByRole("combobox", { name: /^Authentication method/ });
 const edgeLabel = (page, id = "e_request") => page.locator(`.ps-edge-label[data-edge-id="${id}"]`);
 const catalogFile = methods => ({ format: "secure-design-studio-authentication-catalog", version: 1, methods });
@@ -266,8 +267,8 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
     });
   });
 
-  test("regression: authentication compatibility is neutral on this build while definition warnings stay actionable", async () => {
-    await getHarness().run("regression: compatible build and genuine authentication warnings", async ({ page, observations }) => {
+  test("regression: authentication review counts referenced methods once and keeps unused repair separate", async () => {
+    await getHarness().run("regression: actionable authentication methods and unused definitions", async ({ page, observations }) => {
       let dialog = await openLibrary(page);
       assert.equal(await dialog.locator(".ps-auth-compatibility, .ps-auth-warnings").count(), 0,
         "Unused modern library methods do not create diagram notices");
@@ -281,7 +282,7 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       const runningVersion = (await page.locator(".ps-command-version").textContent()).replace(/^v/, "");
       assert.match(await dialog.locator(".ps-auth-compatibility").innerText(), new RegExp(`This running build \\(${runningVersion.replaceAll(".", "\\.")}\\) meets the minimum version \\(0\\.1\\.5\\)`));
       assert.equal(await dialog.locator(".ps-auth-warnings").count(), 0);
-      assert.equal(await page.locator(".ps-auth-warning-trigger").count(), 0);
+      assert.equal(await reviewTrigger(page).count(), 0);
       assert.equal(await dialog.getByRole("heading", { name: /Compatibility warning/ }).count(), 0);
       await dialog.locator(".ps-auth-affected summary").press("Enter");
       assert.match(await dialog.locator(".ps-auth-affected").innerText(), /Authentication methods: 1; flows: 1; node-type policies: 0/);
@@ -290,21 +291,55 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       const method = await addMethod(page);
       await closeLibrary(page);
       input.doc.edges[0].authenticationTypes = [method.id];
+      input.doc.edges[1].authenticationTypes = [method.id];
+      input.doc.nodeTypes[0].definition.allowedAuthMethods = [{ id: method.id, status: "Allowed" }];
+      const supplied = await suppliedMethod(page, "EntraApplicationOnlyWithCdt");
+      const unused = { ...supplied, behavior: { ...supplied.behavior, audience: !supplied.behavior.audience } };
+      input.doc.authenticationDefinitions = [unused];
       await upload(page.locator("#ps-file-open-input"), input, "missing-definition.tma");
-      dialog = await openLibrary(page);
-      assert.match(await dialog.locator(".ps-auth-warnings").innerText(), /definition missing/);
+      const selectionsByEdge = doc => Object.fromEntries(doc.edges.map(edge => [edge.id, edge.authenticationTypes]));
+      const beforeReview = selectionsByEdge((await exportModel(page)).doc);
+      assert.deepEqual(beforeReview.e_request, [method.id]);
+      assert.deepEqual(beforeReview.e_parallel, [method.id]);
+      const trigger = reviewTrigger(page);
+      const title = "Review authentication methods (1)";
+      assert.equal(await trigger.innerText(), title);
+      await trigger.press("Enter");
+      dialog = modal(page);
+      const review = dialog.getByRole("region", { name: title, exact: true });
+      assert.equal(await review.getByRole("heading", { name: title }).evaluate(element => element === document.activeElement), true);
+      assert.equal(await review.getByRole("listitem").count(), 1);
+      assert.match(await review.getByRole("listitem").innerText(), /definition missing in this diagram/);
+      const maintenance = dialog.getByRole("region", { name: "Unused saved definitions (1)", exact: true });
+      assert.ok((await maintenance.innerText()).includes(`${unused.id}: Saved authentication behavior differs`));
       assert.match(await dialog.locator(".ps-auth-compatibility").innerText(), /meets the minimum version/);
-      await dialog.locator(".ps-auth-warnings summary").press("Enter");
+      await page.keyboard.press("Tab");
+      assert.equal(await review.locator("summary").evaluate(element => element === document.activeElement), true);
+      await page.keyboard.press("Enter");
+      await review.getByRole("button", { name: "Use library definition in this diagram", exact: true }).click();
       await dialog.getByRole("button", { name: "Use library definition in this diagram", exact: true }).click();
-      await dialog.getByRole("button", { name: "Use library definition in this diagram", exact: true }).click();
-      await until(() => heading.evaluate(element => element === document.activeElement), "removed warning returns focus to neutral compatibility heading");
-      assert.equal(await dialog.locator(".ps-auth-warnings").count(), 0);
+      await until(() => heading.evaluate(element => element === document.activeElement), "last reviewed method returns focus to compatibility");
+      assert.equal(await review.count(), 0);
       await dialog.locator(".ps-auth-affected summary").press("Enter");
       assert.match(await dialog.locator(".ps-auth-affected").innerText(), /Partner contract/);
       assert.doesNotMatch(await dialog.locator(".ps-auth-affected").innerText(), /unresolved/);
+      await page.keyboard.press("Escape");
+      await until(() => page.getByRole("button", { name: "Model", exact: true }).evaluate(element => element === document.activeElement),
+        "dismissal uses Model when the review trigger disappears");
+      assert.equal(await trigger.count(), 0, "An unused conflicting snapshot alone is not a toolbar task");
+      const afterReview = (await exportModel(page)).doc;
+      assert.deepEqual(selectionsByEdge(afterReview), beforeReview);
+      assert.deepEqual(afterReview.authenticationDefinitions.find(def => def.id === unused.id), unused);
+      await openLibrary(page);
+      await maintenance.locator("summary").press("Enter");
+      await maintenance.getByRole("button", { name: "Use library definition in this diagram", exact: true }).click();
+      await dialog.getByRole("button", { name: "Use library definition in this diagram", exact: true }).click();
+      assert.equal(await maintenance.count(), 0);
+      await closeLibrary(page);
+      assert.deepEqual((await exportModel(page)).doc.authenticationDefinitions.find(def => def.id === unused.id), supplied);
       observations.runningVersion = runningVersion;
       observations.versionWarning = "absent for compatible runtime; inventory remains available";
-      observations.resolutionFocus = "compatibility heading after missing-definition warning is removed";
+      observations.resolutionFocus = "compatibility heading after repair; Model on dismissal";
     });
   });
 
@@ -537,7 +572,7 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       assert.equal(await page.locator(".ps-auth-description").textContent(), incoming.doc.authenticationDefinitions[0].description);
       assert.equal((await library(page)).methods.find(entry => entry.id === method.id).label, replacement.label);
       const savedModel = await exportModel(page);
-      assert.equal(await page.locator(".ps-auth-warning-trigger").count(), 0);
+      assert.equal(await reviewTrigger(page).count(), 0);
       const dialog = await openLibrary(page);
       const notes = dialog.getByRole("region", { name: "Model authentication notes (2)", exact: true });
       assert.match(await notes.innerText(), /Saved partner differs from the browser library: display name, description/);
@@ -729,7 +764,7 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       assert.equal(await modal(page).locator("form").count(), 1, "Failed save keeps the recoverable draft");
       await modal(page).getByRole("button", { name: "Cancel", exact: true }).click();
       await closeLibrary(page);
-      assert.equal(await page.locator(".ps-auth-warning-trigger").count(), 0);
+      assert.equal(await reviewTrigger(page).count(), 0);
       const storage = page.getByRole("button", { name: "Authentication Library storage error", exact: true });
       await storage.click();
       const alert = modal(page).getByRole("alert");
@@ -746,10 +781,11 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
     });
   });
 
-  test("regression: Authentication Library load and history errors stay separate from diagram method warnings", async () => {
+  test("regression: Authentication Library load and history errors stay separate from methods to review", async () => {
     await getHarness().run("regression: authentication profile and history recovery with a missing method", async ({ page }) => {
       const input = modelFixture();
       input.doc.edges[0].authenticationTypes = ["MissingProof"];
+      input.doc.nodeTypes[0].definition.allowedAuthMethods = [{ id: "PolicyOnly", status: "Allowed" }];
       await uploadMeasured(page, input, "missing-proof.tma");
       const saved = await readAutosave(page);
       await page.addInitScript(({ libraryKey, autosaveKey, saved }) => {
@@ -767,13 +803,23 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       assert.equal(await alert.evaluate(element => element === document.activeElement), true);
       assert.match(await alert.innerText(), /could not be loaded from browser storage/);
       assert.match(await alert.innerText(), /undo history could not be restored/);
-      assert.match(await page.locator(".ps-auth-warning-trigger").innerText(), /\(1\)/);
-      assert.match(await dialog.locator(".ps-auth-warnings li").innerText(), /MissingProof/);
+      const title = "Review authentication methods (2)";
+      const trigger = reviewTrigger(page);
+      assert.equal(await trigger.innerText(), title);
+      const review = dialog.getByRole("region", { name: title, exact: true });
+      assert.deepEqual(await review.locator("summary").allTextContents(), ["Review definition: MissingProof", "Review definition: PolicyOnly"]);
       await dialog.getByRole("searchbox").fill("API key");
       await dialog.getByRole("button", { name: "Disable method", exact: true }).click();
       assert.equal(await alert.count(), 1, "Blocked profile edits do not duplicate the load error");
       assert.equal(await page.evaluate(key => localStorage.getItem(key), libraryKey), "");
       await closeLibrary(page);
+      await until(() => storage.evaluate(element => element === document.activeElement), "dismissal restores storage trigger, not review");
+      await trigger.press("Enter");
+      assert.equal(await review.getByRole("heading", { name: title }).evaluate(element => element === document.activeElement), true);
+      await review.locator("summary").last().press("Enter");
+      assert.equal(await review.getByRole("button", { name: "Import catalog JSON…", exact: true }).isVisible(), true);
+      await page.keyboard.press("Escape");
+      await until(() => trigger.evaluate(element => element === document.activeElement), "dismissal restores review trigger, not storage");
       assert.deepEqual((await readAutosave(page)).doc.edges, saved.doc.edges, "Review did not change any flow");
       assert.equal(await storage.isVisible(), true);
     });
@@ -1047,7 +1093,7 @@ export function registerAuthenticationContracts({ getHarness, exportModel }) {
       assert.deepEqual((await exportModel(page)).doc, applied.doc, "Undo restores the explicitly replaced definition");
 
       const dialog = await openLibrary(page);
-      assert.equal(await page.locator(".ps-auth-warning-trigger").count(), 0);
+      assert.equal(await reviewTrigger(page).count(), 0);
       const notes = dialog.getByRole("region", { name: "Model authentication notes (1)", exact: true });
       assert.match(await notes.innerText(), /This model uses its own guidance for API key/);
       await dialog.getByRole("searchbox").fill(supplied.label);

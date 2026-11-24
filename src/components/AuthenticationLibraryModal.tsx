@@ -143,7 +143,11 @@ function DefinitionComparison({
   );
 }
 
-export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusStorage: boolean; onClose: () => void }) {
+export function AuthenticationLibraryModal({ actionableNotices, focusStorage, onClose }: {
+  actionableNotices: readonly AuthenticationNotice[];
+  focusStorage: boolean;
+  onClose: () => void;
+}) {
   const installed = useLibraries().authentication;
   const {
     doc, authenticationLibrary, authenticationCatalog, authenticationNotices, authenticationCompatibility,
@@ -169,14 +173,14 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
   const importButtonRef = useRef<HTMLButtonElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   const storageErrorRef = useRef<HTMLDivElement>(null);
-  const warningsRef = useRef<HTMLHeadingElement>(null);
+  const reviewRef = useRef<HTMLHeadingElement>(null);
   const compatibilityRef = useRef<HTMLHeadingElement>(null);
   const returnRef = useRef<HTMLElement | null>(null);
   const importRequestRef = useRef(0);
 
   const references = useMemo(() => authenticationReferences(doc), [doc]);
   const modelNotes = authenticationNotices.filter(isInformationalAuthenticationNotice);
-  const warnings = authenticationNotices.filter(notice => !isInformationalAuthenticationNotice(notice));
+  const unusedNotices = authenticationNotices.filter(notice => !notice.referenced);
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return authenticationLibrary.filter(method =>
@@ -203,7 +207,7 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
     const target = layer === "draft" ? methodRef.current
       : layer !== "browse" ? cancelRef.current
       : returnRef.current?.isConnected ? returnRef.current
-      : (focusStorage ? storageErrorRef.current : null) ?? warningsRef.current ?? storageErrorRef.current ?? compatibilityRef.current ?? searchRef.current;
+      : (focusStorage ? storageErrorRef.current : null) ?? reviewRef.current ?? storageErrorRef.current ?? compatibilityRef.current ?? searchRef.current;
     target?.focus();
   }, [layer, focusStorage]);
 
@@ -279,9 +283,9 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (!first) { event.preventDefault(); dialogRef.current?.focus(); }
-    else if (event.shiftKey && (document.activeElement === first || !focusable.includes(document.activeElement as HTMLElement))) {
+    else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
       event.preventDefault(); last.focus();
-    } else if (!event.shiftKey && (document.activeElement === last || !focusable.includes(document.activeElement as HTMLElement))) {
+    } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) {
       event.preventDefault(); first.focus();
     }
   };
@@ -354,7 +358,7 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
       setError("Your library changed after this preview. Cancel and choose the file again to review the current changes.");
       return;
     }
-    if (act(() => importAuthenticationCatalog(preview.data), "Catalog imported into this browser profile. Review any remaining diagram warnings below.")) {
+    if (act(() => importAuthenticationCatalog(preview.data), "Catalog imported into this browser profile. Review any methods that still need a definition in this diagram.")) {
       setPreview(null);
       setConfirmUpdates(false);
     }
@@ -411,8 +415,9 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
           <summary>Review definition: {saved?.label ?? local?.label ?? id}</summary>
           <DefinitionComparison before={saved} after={local} beforeTitle="Saved in this diagram (read-only)" afterTitle="This browser's library (read-only)" />
           {method?.unresolved && <p>Unresolved: retained for existing selections, unavailable for new selections.</p>}
-          {method?.unavailableReason && <p>{method.unavailableReason}</p>}
-          {local ? (
+          {reason === "library-unavailable" ? (
+            <p>Check Model &gt; Custom Libraries and open the diagram in a build with the required library. Importing a profile catalog cannot make this method available for new calls.</p>
+          ) : local ? (
             <button type="button" disabled={pending || !!authenticationUnavailableReason(local, installed)} onClick={() => requestConfirmation("resolve", local)}>Use library definition in this diagram</button>
           ) : (
             <>
@@ -510,10 +515,11 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
             <>
               <p>Manage one Authentication Library for this browser profile, shared across diagrams. Matching definitions in the current diagram follow library edits. If the model has its own definition, it keeps that definition.</p>
               <p>Import and export JSON files to transfer or back up this library. The browser cannot write repository source JSON. Diagram-only definitions are not automatically added to your profile.</p>
-              {warnings.length > 0 && (
-                <section className="ps-auth-notices ps-auth-warnings" aria-labelledby="ps-auth-warnings-title">
-                  <h3 ref={warningsRef} id="ps-auth-warnings-title" tabIndex={-1}>Diagram authentication warnings ({warnings.length})</h3>
-                  <ul>{warnings.map(renderNotice)}</ul>
+              {actionableNotices.length > 0 && (
+                <section className="ps-auth-notices ps-auth-warnings" aria-labelledby="ps-auth-review-title">
+                  <h3 ref={reviewRef} id="ps-auth-review-title" tabIndex={-1}>Review authentication methods ({actionableNotices.length})</h3>
+                  <p>These methods are used by a call or a node-type policy but are unavailable for new calls. Reviewing them does not change existing selections.</p>
+                  <ul>{actionableNotices.map(renderNotice)}</ul>
                 </section>
               )}
               {modelNotes.length > 0 && (
@@ -521,6 +527,13 @@ export function AuthenticationLibraryModal({ focusStorage, onClose }: { focusSto
                   <h3 id="ps-auth-notes-title">Model authentication notes ({modelNotes.length})</h3>
                   <p>No action is needed. This model uses its saved definitions. Comparing them does not change the model or your library.</p>
                   <ul>{modelNotes.map(renderNotice)}</ul>
+                </section>
+              )}
+              {unusedNotices.length > 0 && (
+                <section className="ps-auth-notices" aria-labelledby="ps-auth-unused-title">
+                  <h3 id="ps-auth-unused-title">Unused saved definitions ({unusedNotices.length})</h3>
+                  <p>No call or node-type policy uses these definitions. You can review them before using these methods.</p>
+                  <ul>{unusedNotices.map(renderNotice)}</ul>
                 </section>
               )}
               {authenticationCompatibility && (

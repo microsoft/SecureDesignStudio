@@ -40,7 +40,7 @@ tab cannot overwrite newer preferences through a library edit or Undo/Redo;
 it reports the conflict and asks for a reload.
 
 **Authentication Library storage error** opens details about the browser
-profile, separate from the diagram's method-warning count. If the library
+profile, separate from **Review authentication methods**. If the library
 could not be loaded, the editor shows supplied methods without overwriting
 stored data. Back up the stored profile before repairing it, then reload.
 If a save, Undo or Redo could not write the library, the change was not
@@ -326,11 +326,19 @@ the current diagram when appropriate. This operation does not rewrite other
 files or change the local library. Definitions imported with diagrams do not
 automatically become reusable library entries.
 
-Missing referenced definitions, unavailable libraries and conflicts with an
-installed contract still have separate definition warnings. Unused unavailable
-snapshots remain reviewable for maintenance. Each notice is derived once per
-stable ID, even across multiple flows and named node-policy rules; it is not
-saved in the diagram.
+**Review authentication methods (N)** appears in the toolbar only when a
+method used by a call or named in a node-type policy is missing its definition,
+requires a library this build does not have, or conflicts with the installed
+contract. The count is the number of distinct method IDs, not the number of
+calls or policies. Activate it to focus the list of those same methods.
+Existing selections are retained. If a required library is absent, check
+**Model > Custom Libraries** and use a build that includes it; importing
+catalog JSON cannot install a library.
+
+Unavailable definitions saved in the diagram but not referenced by any call
+or policy are listed under **Unused saved definitions** in **Model > Customize
+authentication**. They can still be reviewed and repaired there without
+adding to the toolbar count.
 
 ### Core defaults and optional definitions
 
@@ -423,7 +431,7 @@ establish protocol behavior or target-node acceptance.
 ### Compatibility notice and affected items
 
 **Model > Customize authentication** separates file compatibility from
-definition warnings. Referenced authentication IDs outside the historical
+methods that need review. Referenced authentication IDs outside the historical
 11 require application version **0.1.5** or later, except
 `InternalProcessCall`, which requires **0.1.11** or later. The dialog uses the
 highest minimum required by the referenced methods and compares it with the

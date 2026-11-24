@@ -5,7 +5,7 @@ import {
   useStore,
   type FilterState,
 } from "../store";
-import { dataClassificationLabel, isInformationalAuthenticationNotice, resolveNodeTypeDef, uid, withAuthenticationDefinitions } from "../types";
+import { dataClassificationLabel, resolveNodeTypeDef, uid, withAuthenticationDefinitions } from "../types";
 import {
   AUTOSAVE_INTERVAL_OPTIONS,
   useUiShell,
@@ -189,7 +189,9 @@ export function Toolbar() {
     setViewMode,
   } = useStore();
   const catalogError = documentRecoveryError ?? catalogSnapshotError;
-  const authenticationWarningCount = authenticationNotices.filter(notice => !isInformationalAuthenticationNotice(notice)).length;
+  const actionableAuthenticationNotices = useMemo(
+    () => authenticationNotices.filter(notice => notice.actionable), [authenticationNotices],
+  );
   const {
     inspectorVisible,
     inspectorActiveTab,
@@ -1637,15 +1639,13 @@ export function Toolbar() {
     if (clone) selectScenario(clone.id);
   };
 
-  const restoreCommandFocus = (controlsId = commandReturnControlsRef.current) => {
+  const restoreCommandFocus = (controlsId = commandReturnControlsRef.current, preferredTrigger?: HTMLButtonElement | null) => {
     if (!controlsId) return;
     window.setTimeout(() => {
-      document
-        .querySelector<HTMLButtonElement>(
-          `button[aria-controls="${controlsId}"]`,
-        )
-        ?.focus();
-      if (commandReturnControlsRef.current === controlsId) {
+      const trigger = preferredTrigger?.getClientRects().length ? preferredTrigger
+        : document.querySelector<HTMLButtonElement>(`button[aria-controls="${controlsId}"]`);
+      trigger?.focus();
+      if (commandReturnControlsRef.current === controlsId || preferredTrigger === commandTriggerRef.current) {
         commandReturnControlsRef.current = null;
         commandTriggerRef.current = null;
       }
@@ -2603,15 +2603,19 @@ export function Toolbar() {
           )}
         </div>
 
-        {authenticationWarningCount > 0 && (
+        {actionableAuthenticationNotices.length > 0 && (
           <button
             type="button"
-            className="ps-command-domain ps-auth-warning-trigger"
+            className="ps-command-domain ps-auth-review-trigger"
             aria-haspopup="dialog"
-            title="Review diagram authentication definitions"
-            onClick={() => executeCommand("model.authentication")}
+            aria-controls="ps-auth-library-dialog"
+            title="Review methods used by calls or node-type policies that need a definition or library"
+            onClick={event => {
+              commandTriggerRef.current = event.currentTarget;
+              executeCommand("model.authentication");
+            }}
           >
-            Authentication warnings ({authenticationWarningCount})
+            Review authentication methods ({actionableAuthenticationNotices.length})
           </button>
         )}
         {(authenticationStorageError || authenticationHistoryError) && (
@@ -2621,7 +2625,10 @@ export function Toolbar() {
             aria-haspopup="dialog"
             aria-controls="ps-auth-library-dialog"
             title={authenticationStorageError ?? authenticationHistoryError ?? undefined}
-            onClick={() => executeCommand("model.authenticationStorage")}
+            onClick={event => {
+              commandTriggerRef.current = event.currentTarget;
+              executeCommand("model.authenticationStorage");
+            }}
           >
             Authentication Library storage error
           </button>
@@ -3288,11 +3295,11 @@ export function Toolbar() {
     )}
     {authenticationLibraryOpen && (
       <AuthenticationLibraryModal
+        actionableNotices={actionableAuthenticationNotices}
         focusStorage={authenticationLibraryOpen === "storage"}
         onClose={() => {
           setAuthenticationLibraryOpen(null);
-          restoreCommandFocus(authenticationLibraryOpen === "storage" && (authenticationStorageError || authenticationHistoryError)
-            ? "ps-auth-library-dialog" : "ps-command-menu-model");
+          restoreCommandFocus("ps-command-menu-model", commandTriggerRef.current);
         }}
       />
     )}
