@@ -2,12 +2,153 @@ import "./collaboration-loader.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as Y from "yjs";
+import { unzipSync, strFromU8 } from "fflate";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { modelFixture } from "../browser/fixture.mjs";
-const { declutterDocument } = await import("../../src/declutterLayout.ts");
+const { declutterDocument, applyScenarioDeclutter, scenarioDocument, updateScenarioDocument, pruneScenarioLayouts } = await import("../../src/declutterLayout.ts");
 const { normalizeDoc } = await import("../../src/store.tsx");
 const { createYShape } = await import("../../src/collab/yDoc.ts");
 const { reconcileLocalToY, buildDocFromY } = await import("../../src/collab/reconcile.ts");
 const { containsRect, nodeRect } = await import("../../src/boundaryGeometry.ts");
+const { exportTm7 } = await import("../../src/tm7Export.ts");
+const { exportVsdx } = await import("../../src/vsdxExport.ts");
+
+const canonical = doc => Object.fromEntries(Object.entries(doc).map(([key, value]) => [key,
+  Array.isArray(value) ? value.toSorted((a, b) => a.id.localeCompare(b.id)) : value]));
+const boundary = (id, nodeIds) => ({ id, nodeIds, position: { x: -40, y: -40 }, size: { width: 600, height: 400 } });
+const arrangeScenario = (doc, id) => {
+  const scenario = doc.scenarios.find(item => item.id === id);
+  const drawing = scenarioDocument(doc, id);
+  return applyScenarioDeclutter(doc, {
+    nodes: drawing.nodes.filter(node => scenario.nodeIds.includes(node.id)),
+    edges: drawing.edges.filter(edge => scenario.edgeIds.includes(edge.id))
+      .map(edge => ({ ...edge, labelSize: { width: 360, height: 48 } })),
+    boundaries: drawing.boundaries.filter(boundary => scenario.boundaryIds.includes(boundary.id)),
+    annotations: (drawing.textAnnotations ?? []).filter(annotation => scenario.textAnnotationIds?.includes(annotation.id)),
+  }, id);
+};
+
+test("Optimize: shared entities retain independent scenario geometry through edits and native normalization", () => {
+  const original = normalizeDoc(modelFixture().doc);
+  original.scenarios[1].edgeIds.push("e_request");
+  original.scenarios[1].nodeIds.push("n_client");
+  original.scenarios[1].edgeNumbers.e_request = 2;
+  const first = arrangeScenario(original, "s_primary");
+  const firstDrawing = scenarioDocument(first, "s_primary");
+  const both = arrangeScenario(first, "s_archive");
+  assert.deepEqual(scenarioDocument(both, "s_primary"), { ...firstDrawing, scenarios: both.scenarios });
+  assert.notDeepEqual(both.scenarios[0].layout.nodes.n_api, both.scenarios[1].layout.nodes.n_api);
+  assert.notDeepEqual(both.scenarios[0].layout.edges.e_request, both.scenarios[1].layout.edges.e_request);
+  assert.deepEqual(both.nodes, original.nodes, "Shared baseline geometry is not overwritten");
+  assert.deepEqual(both.edges, original.edges);
+  assert.equal(arrangeScenario(both, "s_primary"), both, "Repeated Optimize is a no-op");
+  const edited = updateScenarioDocument(both, "s_primary", doc => ({
+    ...doc,
+    nodes: doc.nodes.map(node => node.id === "n_api"
+      ? { ...node, title: "Shared edit", position: { x: 901, y: 502 } } : node),
+    edges: doc.edges.map(edge => edge.id === "e_request" ? { ...edge, waypoints: [] } : edge),
+  }));
+  assert.deepEqual(edited.nodes.find(node => node.id === "n_api").position, original.nodes[1].position);
+  assert.equal(scenarioDocument(edited, "s_archive").nodes[1].title, "Shared edit");
+  assert.deepEqual(edited.scenarios[1].layout, both.scenarios[1].layout);
+  assert.deepEqual(scenarioDocument(edited, "s_primary").nodes[1].position, { x: 901, y: 502 });
+  assert.deepEqual(scenarioDocument(edited, "s_primary").edges[0].waypoints, []);
+  assert.deepEqual(JSON.parse(JSON.stringify(normalizeDoc(JSON.parse(JSON.stringify(edited))))),
+    JSON.parse(JSON.stringify(edited)));
+  assert.equal(scenarioDocument(original, "s_primary"), original, "Legacy files use their shared arrangement");
+  assert.equal(scenarioDocument(edited, null), edited, "Show all uses the baseline");
+});
+
+test("Optimize: boundary and annotation edits are local, removed members do not retain stale layouts", () => {
+  const original = normalizeDoc(modelFixture().doc);
+  original.boundaries = [{ ...boundary("b_shared", original.nodes.map(node => node.id)), type: "security", title: "Shared" }];
+  original.textAnnotations = [{ id: "a_shared", text: "Synthetic", position: { x: 0, y: 0 }, size: { width: 300, height: 120 } }];
+  for (const scenario of original.scenarios) {
+    scenario.boundaryIds = ["b_shared"];
+    scenario.textAnnotationIds = ["a_shared"];
+  }
+  const arranged = arrangeScenario(arrangeScenario(original, "s_primary"), "s_archive");
+  const edited = updateScenarioDocument(arranged, "s_primary", doc => ({
+    ...doc,
+    boundaries: doc.boundaries.map(item => ({ ...item, position: { x: -300, y: -400 }, size: { width: 2000, height: 1400 } })),
+    textAnnotations: doc.textAnnotations.map(item => ({ ...item, position: { x: 123, y: 456 }, text: "Shared text" })),
+  }));
+  assert.deepEqual(edited.scenarios[1].layout, arranged.scenarios[1].layout);
+  assert.deepEqual(edited.boundaries, original.boundaries);
+  assert.deepEqual(scenarioDocument(edited, "s_primary").textAnnotations[0].position, { x: 123, y: 456 });
+  assert.equal(scenarioDocument(edited, "s_archive").textAnnotations[0].text, "Shared text");
+  const removed = pruneScenarioLayouts({ ...edited, scenarios: edited.scenarios.map(scenario => ({
+    ...scenario, nodeIds: [], edgeIds: [], boundaryIds: [], textAnnotationIds: [],
+  })) });
+  for (const scenario of removed.scenarios) {
+    assert.deepEqual(scenario.layout, { nodes: {}, edges: {}, boundaries: {}, annotations: {} });
+  }
+});
+
+test("Optimize: invalid saved scenario geometry rejects the whole import instead of dropping the layout", () => {
+  const arranged = arrangeScenario(normalizeDoc(modelFixture().doc), "s_primary");
+  const mutations = [
+    layout => { layout.nodes.n_api.position.x = "not-a-number"; },
+    layout => { layout.nodes.n_api.size = { width: -1, height: 10 }; },
+    layout => { layout.edges.e_request.compactLabel = "true"; },
+    layout => { layout.edges.e_request.waypoints.push({ ...layout.edges.e_request.waypoints[0] }); },
+    layout => { layout.boundaries = []; },
+  ];
+  for (const mutate of mutations) {
+    const invalid = structuredClone(arranged);
+    mutate(invalid.scenarios[0].layout);
+    assert.throws(() => normalizeDoc(invalid), /Invalid scenario layout/);
+  }
+});
+
+test("Optimize: simultaneous independent scenario layouts survive synthetic peer merge and reconnect", () => {
+  const original = normalizeDoc(modelFixture().doc);
+  const a = createYShape(new Y.Doc()), b = createYShape(new Y.Doc()), reconnect = createYShape(new Y.Doc());
+  try {
+    reconcileLocalToY(a, original);
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    const first = arrangeScenario(buildDocFromY(a), "s_primary");
+    const second = arrangeScenario(buildDocFromY(b), "s_archive");
+    reconcileLocalToY(a, first);
+    reconcileLocalToY(b, second);
+    Y.applyUpdate(a.ydoc, Y.encodeStateAsUpdate(b.ydoc));
+    Y.applyUpdate(b.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    Y.applyUpdate(reconnect.ydoc, Y.encodeStateAsUpdate(a.ydoc));
+    const merged = buildDocFromY(reconnect);
+    assert.deepEqual(merged.scenarios.find(s => s.id === "s_primary").layout,
+      JSON.parse(JSON.stringify(first.scenarios.find(s => s.id === "s_primary").layout)));
+    assert.deepEqual(merged.scenarios.find(s => s.id === "s_archive").layout,
+      JSON.parse(JSON.stringify(second.scenarios.find(s => s.id === "s_archive").layout)));
+    assert.deepEqual(canonical(buildDocFromY(a)), canonical(buildDocFromY(b)));
+  } finally {
+    a.ydoc.destroy(); b.ydoc.destroy(); reconnect.ydoc.destroy();
+  }
+});
+
+test("Optimize: TM7 tabs and Visio pages export each shared scenario's geometry without mutating the baseline", () => {
+  const original = normalizeDoc(modelFixture().doc);
+  original.scenarios[1].nodeIds.push("n_client");
+  original.scenarios[1].edgeIds.push("e_request");
+  original.scenarios[1].edgeNumbers.e_request = 2;
+  const arranged = arrangeScenario(arrangeScenario(original, "s_primary"), "s_archive");
+  const before = structuredClone(arranged);
+  const surfaces = xml => [...new DOMParser().parseFromString(xml, "text/xml")
+    .getElementsByTagNameNS("*", "DrawingSurfaceModel")]
+    .map(surface => new XMLSerializer().serializeToString(surface));
+  const tabs = surfaces(exportTm7(arranged));
+  const pages = unzipSync(exportVsdx(arranged));
+  for (const [index, scenario] of arranged.scenarios.entries()) {
+    const projected = scenarioDocument(arranged, scenario.id);
+    const flattened = { ...projected, scenarios: projected.scenarios.map(({ layout, ...rest }) => rest) };
+    assert.equal(tabs[index], surfaces(exportTm7(flattened))[index]);
+    const path = `visio/pages/page${index + 1}.xml`;
+    assert.equal(strFromU8(pages[path]), strFromU8(unzipSync(exportVsdx(flattened))[path]));
+  }
+  assert.notEqual(tabs[0], surfaces(exportTm7(original))[0], "TM7 uses saved geometry, not the shared baseline");
+  assert.notEqual(strFromU8(pages["visio/pages/page1.xml"]),
+    strFromU8(unzipSync(exportVsdx(original))["visio/pages/page1.xml"]));
+  assert.deepEqual(arranged, before, "exports are read-only");
+});
 
 const inputFor = doc => ({
   nodes: doc.nodes, boundaries: doc.boundaries, annotations: doc.textAnnotations ?? [],

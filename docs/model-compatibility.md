@@ -49,6 +49,13 @@ built-in, and saved-definition validation described in the
 
 ## Current limits
 
+Optimize stores optional `Scenario.layout` geometry without duplicating shared
+nodes, flows or boundary membership. Native files, recovery, history and current
+browser peers retain these arrangements; TM7 tabs and Visio pages use each
+scenario's geometry within those formats' existing limits. Older readers may
+discard scenario layouts. Keep a `.tma` backup and use current clients for every
+peer; the document format and storage namespaces have not changed.
+
 Reference preservation in 0.1.25 adds no library loader or executable capability.
 Version 0.1.26 additionally supports optional, data-only
 [catalog-definition snapshots](catalog-snapshots.md) for these five catalogs.

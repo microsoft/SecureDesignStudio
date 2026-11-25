@@ -969,6 +969,13 @@ export function formatBoundaryNetworkText(value: string | undefined): string {
 // Per scenario, the edge sequence number lives on the scenario, not the edge.
 // Data attachments are also per-scenario so the same node/edge can hold
 // different data items in different scenarios.
+export interface ScenarioLayout {
+  nodes: Record<string, Pick<PsNode, "position" | "size">>;
+  edges: Record<string, Pick<PsEdge, "waypoints" | "sourceHandle" | "targetHandle"> & { compactLabel?: boolean }>;
+  boundaries: Record<string, Pick<PsBoundary, "position" | "size">>;
+  annotations: Record<string, Pick<PsTextAnnotation, "position" | "size">>;
+}
+
 export interface Scenario {
   id: string;
   name: string;
@@ -983,6 +990,8 @@ export interface Scenario {
   edgeNumbers: Record<string, number>;
   boundaryIds: string[];
   textAnnotationIds?: string[];
+  // Optimize creates an independent, editable arrangement; model facts remain shared.
+  layout?: ScenarioLayout;
   // nodeId -> (dataId -> Retention)
   nodeData: Record<string, Record<string, Retention>>;
   // edgeId -> dataIds (treated as a set), split by direction.

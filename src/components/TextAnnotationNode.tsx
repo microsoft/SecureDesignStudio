@@ -3,7 +3,7 @@ import { useStore } from "../store";
 import { useUiShell } from "../uiShell";
 
 export function TextAnnotationNode({ id, data, selected, dragging }: NodeProps) {
-  const { doc, setSelection, toggleAdditionalSelection, snapshot, updateTextAnnotation, deleteTextAnnotation } = useStore();
+  const { visibleTextAnnotations, setSelection, toggleAdditionalSelection, snapshot, updateTextAnnotation, deleteTextAnnotation } = useStore();
   const { openInspector } = useUiShell();
   return (
     <div className={`ps-text-annotation${selected ? " selected" : ""}`} tabIndex={0}
@@ -14,7 +14,7 @@ export function TextAnnotationNode({ id, data, selected, dragging }: NodeProps) 
           setSelection({ kind: "annotation", id }); openInspector("properties");
         } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
           event.preventDefault(); event.stopPropagation();
-          const annotation = doc.textAnnotations?.find(item => item.id === id);
+          const annotation = visibleTextAnnotations.find(item => item.id === id);
           if (!annotation) return;
           const step = event.shiftKey ? 10 : 1;
           setSelection({ kind: "annotation", id });

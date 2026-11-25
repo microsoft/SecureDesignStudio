@@ -1,6 +1,6 @@
 import { Graph, layout, type EdgeLabel, type GraphLabel, type NodeLabel } from "@dagrejs/dagre";
 import { DEFAULT_NODE_SIZE, expandRectToContain, nodeRect, type Rect } from "./boundaryGeometry";
-import { uid, type Position, type PsDocument, type Size, type Waypoint } from "./types";
+import { uid, type Position, type PsDocument, type Scenario, type ScenarioLayout, type Size, type Waypoint } from "./types";
 
 export interface DeclutterInput {
   nodes: { id: string; size?: Size }[];
@@ -162,4 +162,195 @@ export function declutterDocument(doc: PsDocument, input: DeclutterInput): PsDoc
     ...doc, nodes, boundaries, edges: nextEdges,
     ...(annotations ? { textAnnotations: annotations } : {}),
   } : doc;
+}
+
+function nodeGeometry(node: ScenarioLayout["nodes"][string]) {
+  return { position: node.position, size: node.size };
+}
+
+function edgeGeometry(edge: ScenarioLayout["edges"][string]) {
+  return { waypoints: edge.waypoints, sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle, compactLabel: edge.compactLabel };
+}
+
+function rectGeometry(rect: { position: Position; size: Size }) {
+  return { position: rect.position, size: rect.size };
+}
+
+export function scenarioDocument(doc: PsDocument, scenarioId: string | null): PsDocument {
+  const saved = doc.scenarios.find(scenario => scenario.id === scenarioId)?.layout;
+  if (!saved) return doc;
+  return {
+    ...doc,
+    nodes: doc.nodes.map(node => Object.hasOwn(saved.nodes, node.id)
+      ? { ...node, ...nodeGeometry(saved.nodes[node.id]) } : node),
+    edges: doc.edges.map(edge => Object.hasOwn(saved.edges, edge.id)
+      ? { ...edge, ...edgeGeometry(saved.edges[edge.id]) } : edge),
+    boundaries: doc.boundaries.map(boundary => Object.hasOwn(saved.boundaries, boundary.id)
+      ? { ...boundary, ...saved.boundaries[boundary.id] } : boundary),
+    ...(doc.textAnnotations ? { textAnnotations: doc.textAnnotations.map(annotation =>
+      Object.hasOwn(saved.annotations, annotation.id)
+        ? { ...annotation, ...saved.annotations[annotation.id] } : annotation) } : {}),
+  };
+}
+
+function captureScenarioLayout(doc: PsDocument, scenario: Scenario): ScenarioLayout {
+  return {
+    nodes: Object.fromEntries(doc.nodes.filter(node => scenario.nodeIds.includes(node.id))
+      .map(node => [node.id, nodeGeometry(node)])),
+    edges: Object.fromEntries(doc.edges.filter(edge => scenario.edgeIds.includes(edge.id))
+      .map(edge => [edge.id, edgeGeometry(edge)])),
+    boundaries: Object.fromEntries(doc.boundaries.filter(boundary => scenario.boundaryIds.includes(boundary.id))
+      .map(boundary => [boundary.id, rectGeometry(boundary)])),
+    annotations: Object.fromEntries((doc.textAnnotations ?? []).filter(annotation =>
+      scenario.textAnnotationIds?.includes(annotation.id)).map(annotation => [annotation.id, rectGeometry(annotation)])),
+  };
+}
+
+// Run geometry-sensitive edits against the active arrangement, then retain
+// shared facts without publishing its coordinates into other scenarios.
+export function updateScenarioDocument(
+  doc: PsDocument, scenarioId: string | null, update: (current: PsDocument) => PsDocument,
+): PsDocument {
+  const projected = scenarioDocument(doc, scenarioId);
+  const next = update(projected);
+  if (next === projected) return doc;
+  if (projected === doc) return next;
+  const scenario = next.scenarios.find(item => item.id === scenarioId);
+  const nodes = new Map(doc.nodes.map(node => [node.id, node]));
+  const edges = new Map(doc.edges.map(edge => [edge.id, edge]));
+  const boundaries = new Map(doc.boundaries.map(boundary => [boundary.id, boundary]));
+  const annotations = new Map(doc.textAnnotations?.map(annotation => [annotation.id, annotation]));
+  return {
+    ...next,
+    nodes: next.nodes.map(node => {
+      const original = nodes.get(node.id);
+      return original ? { ...node, ...nodeGeometry(original) } : node;
+    }),
+    edges: next.edges.map(edge => {
+      const original = edges.get(edge.id);
+      return original ? { ...edge, ...edgeGeometry(original) } : edge;
+    }),
+    boundaries: next.boundaries.map(boundary => {
+      const original = boundaries.get(boundary.id);
+      return original ? { ...boundary, ...rectGeometry(original) } : boundary;
+    }),
+    ...(next.textAnnotations ? { textAnnotations: next.textAnnotations.map(annotation => {
+      const original = annotations.get(annotation.id);
+      return original ? { ...annotation, ...rectGeometry(original) } : annotation;
+    }) } : {}),
+    scenarios: scenario ? next.scenarios.map(item => item.id === scenario.id
+      ? { ...item, layout: captureScenarioLayout(next, scenario) } : item) : next.scenarios,
+  };
+}
+
+export function applyScenarioDeclutter(
+  doc: PsDocument, input: DeclutterInput, scenarioId: string | null,
+): PsDocument {
+  const scenario = doc.scenarios.find(item => item.id === scenarioId);
+  if (!scenario) return declutterDocument(doc, input);
+  const projected = scenarioDocument(doc, scenario.id);
+  const next = declutterDocument(projected, input);
+  if (next === projected) return doc;
+  const saved = captureScenarioLayout(next, scenario);
+  return { ...doc, scenarios: doc.scenarios.map(item => item.id === scenario.id
+    ? { ...item, layout: saved } : item) };
+}
+
+export function pruneScenarioLayouts(doc: PsDocument): PsDocument {
+  if (!doc.scenarios.some(scenario => scenario.layout)) return doc;
+  const nodeIds = new Set(doc.nodes.map(node => node.id));
+  const edgeIds = new Set(doc.edges.map(edge => edge.id));
+  const boundaryIds = new Set(doc.boundaries.map(boundary => boundary.id));
+  const annotationIds = new Set(doc.textAnnotations?.map(annotation => annotation.id));
+  const retain = <T,>(entries: Record<string, T>, ids: readonly string[]) => {
+    const allowed = new Set(ids);
+    return Object.keys(entries).every(id => allowed.has(id)) ? entries
+      : Object.fromEntries(Object.entries(entries).filter(([id]) => allowed.has(id)));
+  };
+  let changed = false;
+  const scenarios = doc.scenarios.map(scenario => {
+    const layout = scenario.layout;
+    if (!layout) return scenario;
+    const nodes = retain(layout.nodes, scenario.nodeIds.filter(id => nodeIds.has(id)));
+    const edges = retain(layout.edges, scenario.edgeIds.filter(id => edgeIds.has(id)));
+    const boundaries = retain(layout.boundaries, scenario.boundaryIds.filter(id => boundaryIds.has(id)));
+    const annotations = retain(layout.annotations, (scenario.textAnnotationIds ?? []).filter(id => annotationIds.has(id)));
+    if (nodes === layout.nodes && edges === layout.edges && boundaries === layout.boundaries
+      && annotations === layout.annotations) return scenario;
+    changed = true;
+    return { ...scenario, layout: { nodes, edges, boundaries, annotations } };
+  });
+  return changed ? { ...doc, scenarios } : doc;
+}
+
+export function normalizeScenarioLayout(raw: unknown): ScenarioLayout | undefined {
+  if (raw === undefined) return undefined;
+  const record = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("Invalid scenario layout: expected a geometry object.");
+    }
+    return value as Record<string, unknown>;
+  };
+  const number = (value: unknown): number => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error("Invalid scenario layout: coordinates and sizes must be finite numbers.");
+    }
+    return value;
+  };
+  const position = (value: unknown): Position => {
+    const point = record(value);
+    return { x: number(point.x), y: number(point.y) };
+  };
+  const size = (value: unknown): Size => {
+    const rect = record(value);
+    const width = number(rect.width), height = number(rect.height);
+    if (width <= 0 || height <= 0) throw new Error("Invalid scenario layout: sizes must be positive.");
+    return { width, height };
+  };
+  const map = <T,>(value: unknown, parse: (entry: Record<string, unknown>) => T): Record<string, T> => {
+    const entries = Object.entries(record(value));
+    if (entries.length > 10000) throw new Error("Invalid scenario layout: too many geometry entries.");
+    return Object.fromEntries(entries.map(([id, entry]) => {
+      if (!id || id.length > 128 || ["__proto__", "prototype", "constructor"].includes(id)) {
+        throw new Error("Invalid scenario layout: invalid entity ID.");
+      }
+      return [id, parse(record(entry))];
+    }));
+  };
+  const saved = record(raw);
+  return {
+    nodes: map(saved.nodes, entry => ({
+      position: position(entry.position), ...(entry.size === undefined ? {} : { size: size(entry.size) }),
+    })),
+    boundaries: map(saved.boundaries, entry => ({ position: position(entry.position), size: size(entry.size) })),
+    annotations: map(saved.annotations, entry => ({ position: position(entry.position), size: size(entry.size) })),
+    edges: map(saved.edges, entry => {
+      if (!Array.isArray(entry.waypoints) || entry.waypoints.length > 1000) {
+        throw new Error("Invalid scenario layout: expected a bounded waypoint list.");
+      }
+      const ids = new Set<string>();
+      const waypoints = entry.waypoints.map(value => {
+        const point = record(value);
+        if (typeof point.id !== "string" || !point.id || point.id.length > 128 || ids.has(point.id)) {
+          throw new Error("Invalid scenario layout: waypoint IDs must be unique strings.");
+        }
+        ids.add(point.id);
+        return { id: point.id, ...position(point) };
+      });
+      const handle = (value: unknown): string | undefined => {
+        if (value === undefined) return undefined;
+        if (typeof value !== "string" || value.length > 128) throw new Error("Invalid scenario layout: invalid handle.");
+        return value;
+      };
+      if (entry.compactLabel !== undefined && typeof entry.compactLabel !== "boolean") {
+        throw new Error("Invalid scenario layout: compact labels must be boolean.");
+      }
+      return { waypoints,
+        ...(entry.sourceHandle === undefined ? {} : { sourceHandle: handle(entry.sourceHandle) }),
+        ...(entry.targetHandle === undefined ? {} : { targetHandle: handle(entry.targetHandle) }),
+        ...(entry.compactLabel === undefined ? {} : { compactLabel: entry.compactLabel }),
+      };
+    }),
+  };
 }
