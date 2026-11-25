@@ -6,6 +6,7 @@ import { AllCommentsPanel } from "./AllCommentsPanel";
 import { AllDeviationsPanel } from "./AllDeviationsPanel";
 import { AllIssuesPanel } from "./AllIssuesPanel";
 import { BoundaryDetails } from "./BoundaryDetails";
+import { scenarioDocument } from "../declutterLayout";
 import { TextAnnotationDetails } from "./TextAnnotationDetails";
 import { ChangesPanel } from "./ChangesPanel";
 import { DataModal } from "./DataModal";
@@ -220,19 +221,20 @@ export function SidePanel() {
     return () => owner.removeEventListener("keydown", onKeyDown);
   }, [inspectorVisible, inspectorPresentation, closeInspector]);
 
+  const diagramDoc = useMemo(() => scenarioDocument(doc, activeScenario?.id ?? null), [doc, activeScenario]);
   const detail = useMemo(() => {
     if (selection?.kind === "annotation") {
-      const annotation = doc.textAnnotations?.find(item => item.id === selection.id);
+      const annotation = diagramDoc.textAnnotations?.find(item => item.id === selection.id);
       if (annotation) return <TextAnnotationDetails key={annotation.id} annotation={annotation} />;
     }
     if (selection?.kind === "node") {
-      const node = doc.nodes.find((candidate) => candidate.id === selection.id);
+      const node = diagramDoc.nodes.find((candidate) => candidate.id === selection.id);
       if (node) return <NodeDetails node={node} />;
     } else if (selection?.kind === "edge") {
-      const edge = doc.edges.find((candidate) => candidate.id === selection.id);
+      const edge = diagramDoc.edges.find((candidate) => candidate.id === selection.id);
       if (edge) return <EdgeDetails edge={edge} />;
     } else if (selection?.kind === "waypoint") {
-      const edge = doc.edges.find(
+      const edge = diagramDoc.edges.find(
         (candidate) => candidate.id === selection.edgeId,
       );
       if (edge) {
@@ -246,7 +248,7 @@ export function SidePanel() {
         );
       }
     } else if (selection?.kind === "boundary") {
-      const boundary = doc.boundaries.find(
+      const boundary = diagramDoc.boundaries.find(
         (candidate) => candidate.id === selection.id,
       );
       if (boundary) return <BoundaryDetails boundary={boundary} />;
@@ -261,7 +263,7 @@ export function SidePanel() {
         </p>
       </div>
     );
-  }, [selection, doc.nodes, doc.edges, doc.boundaries, doc.textAnnotations, activeScenario]);
+  }, [selection, diagramDoc, activeScenario]);
 
   const contextLabel = useMemo(() => {
     if (selection?.kind === "node") {

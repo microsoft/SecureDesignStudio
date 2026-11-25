@@ -27,6 +27,7 @@
 // rendering when ImageSource is empty. Native compatibility needs separate
 // open/save/reopen observations; XML checks alone are not that evidence.
 
+import { scenarioDocument } from "./declutterLayout";
 import type {
   AuthenticationType,
   DfdRole,
@@ -649,11 +650,11 @@ function renderKnowledgeBase(ctx: BuildCtx): string {
 
 // Membership/reference integrity is checked before selecting supported content.
 function buildTabsFromScenarios(doc: PsDocument): TabContent[] {
-  const nodeById = new Map(doc.nodes.map((n) => [n.id, n]));
-  const edgeById = new Map(doc.edges.map((e) => [e.id, e]));
-  const boundaryById = new Map(doc.boundaries.map((b) => [b.id, b]));
-
   return doc.scenarios.map((s: Scenario): TabContent => {
+    const drawing = scenarioDocument(doc, s.id);
+    const nodeById = new Map(drawing.nodes.map((n) => [n.id, n]));
+    const edgeById = new Map(drawing.edges.map((e) => [e.id, e]));
+    const boundaryById = new Map(drawing.boundaries.map((b) => [b.id, b]));
     const nodes = s.nodeIds
       .map((id) => nodeById.get(id))
       .filter((n): n is PsNode => !!n);
@@ -674,7 +675,7 @@ function buildTabsFromScenarios(doc: PsDocument): TabContent[] {
       edges,
       edgeNumbers: { ...s.edgeNumbers },
       boundaries,
-      textAnnotations: (doc.textAnnotations ?? []).filter(annotation => s.textAnnotationIds?.includes(annotation.id)),
+      textAnnotations: (drawing.textAnnotations ?? []).filter(annotation => s.textAnnotationIds?.includes(annotation.id)),
     };
   });
 }

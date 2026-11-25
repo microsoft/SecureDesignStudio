@@ -906,6 +906,8 @@ export interface PsEdge {
   // without changing any analysis rules. Undefined or false means the
   // edge uses the default color.
   problem?: boolean;
+  // Saved Optimize routes follow their points exactly; labels keep full styling.
+  compactLabel?: boolean;
   // Note: data attachments are per-scenario and per-direction
   // (request vs. response). See Scenario.edgeRequestData /
   // Scenario.edgeResponseData.
@@ -969,6 +971,13 @@ export function formatBoundaryNetworkText(value: string | undefined): string {
 // Per scenario, the edge sequence number lives on the scenario, not the edge.
 // Data attachments are also per-scenario so the same node/edge can hold
 // different data items in different scenarios.
+export interface ScenarioLayout {
+  nodes: Record<string, Pick<PsNode, "position" | "size">>;
+  edges: Record<string, Pick<PsEdge, "waypoints" | "sourceHandle" | "targetHandle" | "compactLabel">>;
+  boundaries: Record<string, Pick<PsBoundary, "position" | "size">>;
+  annotations: Record<string, Pick<PsTextAnnotation, "position" | "size">>;
+}
+
 export interface Scenario {
   id: string;
   name: string;
@@ -983,6 +992,8 @@ export interface Scenario {
   edgeNumbers: Record<string, number>;
   boundaryIds: string[];
   textAnnotationIds?: string[];
+  // Optimize creates an independent, editable arrangement; model facts remain shared.
+  layout?: ScenarioLayout;
   // nodeId -> (dataId -> Retention)
   nodeData: Record<string, Record<string, Retention>>;
   // edgeId -> dataIds (treated as a set), split by direction.

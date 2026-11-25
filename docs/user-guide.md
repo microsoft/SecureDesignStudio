@@ -219,6 +219,15 @@ service. Do not enter real customer data.
 8. **Select Optimize.** Use **Optimize** beside the bottom-left zoom controls,
    or **View > Optimize diagram**, to arrange the diagram. You can still drag
    nodes and adjust flows afterward. Use **Undo** if you prefer the old layout.
+   Each scenario keeps its own optimized arrangement, including subsequent
+   node, boundary, annotation and flow-label adjustments. Optimizing another
+   scenario does not replace it. Save/open and recovery retain these layouts;
+   node and flow properties remain shared. **Show all** retains the shared
+   arrangement and does not replace saved scenario layouts.
+   Optimized flows follow their saved route points without spline overshoot;
+   ordinary manual flows retain their curves and labels retain their full styling.
+   Scenario boundaries contain that scenario's members, without expanding around
+   remote members used only by other scenarios. Shared boundary membership is unchanged.
 9. **Review and save.** Choose **Review > Analyze** again, then open
    **Review > Issues** to read the remaining questions. Record anything you
    cannot answer as a comment or work item; do not invent real identities or

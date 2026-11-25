@@ -2,7 +2,8 @@ import { SERVICES } from "./services";
 import { normalizeWorkItem } from "./workItems";
 import { captureFindings, normalizeFinding, normalizeFindings, normalizeFindingAnalysis } from "./findings";
 import { normalizeTextAnnotations, normalizeTextAnnotationIds } from "./textAnnotations";
-import { declutterDocument, type DeclutterInput } from "./declutterLayout";
+import { applyScenarioDeclutter, normalizeScenarioLayout, pruneScenarioLayouts,
+  scenarioDocument, updateScenarioDocument, type DeclutterInput } from "./declutterLayout";
 import type { PsTextAnnotation } from "./types";
 import { normalizeDfdValue, normalizeNodeScope, resolveNodeReviewScope } from "./dfdSemantics";
 import {
@@ -1244,7 +1245,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const classifications = classificationDefinitionsRef.current;
     updateDocumentHistory(previous => {
       const nextDoc = withLibraryDefinitions(
-        typeof update === "function" ? update(previous.doc) : update,
+        pruneScenarioLayouts(typeof update === "function"
+          ? updateScenarioDocument(previous.doc, activeScenarioIdRef.current, update) : update),
         libraries, profile, classifications,
       );
       return nextDoc === previous.doc ? previous : { ...previous, doc: nextDoc, scopeReasonEdit: null };
@@ -1285,7 +1287,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ? { ...state, scopeReasonEdit: null } : state);
     activeScenarioIdRef.current = id;
     setActiveScenarioIdRaw(id);
-    if (id === null) return;
+    const drawing = scenarioDocument(docRef.current, id);
+    if (id === null) {
+      setSelectionRaw(current => current?.kind === "waypoint"
+        && !drawing.edges.some(edge => edge.id === current.edgeId
+          && edge.waypoints.some(waypoint => waypoint.id === current.waypointId)) ? null : current);
+      return;
+    }
     const scenario = docRef.current.scenarios.find(
       (candidate) => candidate.id === id,
     );
@@ -1303,7 +1311,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (current.kind === "annotation") {
         return scenario.textAnnotationIds?.includes(current.id) ? current : null;
       }
-      return scenario.edgeIds.includes(current.edgeId) ? current : null;
+      return scenario.edgeIds.includes(current.edgeId)
+        && drawing.edges.some(edge => edge.id === current.edgeId
+          && edge.waypoints.some(waypoint => waypoint.id === current.waypointId)) ? current : null;
     });
     setMultiSelectedIds((current) =>
       current.filter(
@@ -1469,7 +1479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return boundaryIds.has(current.id) ? current : null;
         }
         if (current.kind === "annotation") return annotationIds.has(current.id) ? current : null;
-        const edge = nextDoc.edges.find(
+        const edge = scenarioDocument(nextDoc, activeScenarioIdRef.current).edges.find(
           (candidate) => candidate.id === current.edgeId,
         );
         return edge?.waypoints.some(
@@ -2113,7 +2123,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const declutterDiagram = useCallback((input: DeclutterInput) => {
     const current = docRef.current;
-    const next = declutterDocument(current, input);
+    const next = applyScenarioDeclutter(current, input, activeScenarioIdRef.current);
     if (next === current) return;
     snapshot();
     setDoc(next);
@@ -3224,15 +3234,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const resizeBoundary = useCallback(
     (id: string, size: Size, position?: Position) => {
+      const scenarioId = activeScenarioIdRef.current;
       setDoc((d) => {
         const boundary = d.boundaries.find((item) => item.id === id);
         if (!boundary) return d;
+        const scenario = d.scenarios.find((item) => item.id === scenarioId);
+        const scopeNodeIds = scenario?.layout ? new Set(scenario.nodeIds) : null;
         let rect = {
           position: position ?? boundary.position,
           size,
         };
         for (const node of d.nodes) {
-          if (boundary.nodeIds.includes(node.id)) {
+          if (boundary.nodeIds.includes(node.id) && (!scopeNodeIds || scopeNodeIds.has(node.id))) {
             rect = expandRectToContain(rect, nodeRect(node));
           }
         }
@@ -3415,6 +3428,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         edgeNumbers: { ...source.edgeNumbers },
         boundaryIds: [...source.boundaryIds],
         ...(source.textAnnotationIds ? { textAnnotationIds: [...source.textAnnotationIds] } : {}),
+        ...(source.layout ? { layout: structuredClone(source.layout) } : {}),
         ...(source.nodeScopeReasons ? { nodeScopeReasons: structuredClone(source.nodeScopeReasons) } : {}),
         ...(source.nodeScopeReasonsRecovery ? { nodeScopeReasonsRecovery: { ...source.nodeScopeReasonsRecovery } } : {}),
         nodeData: clonedNodeData,
@@ -4544,9 +4558,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => doc.scenarios.find((s) => s.id === activeScenarioId) ?? null,
     [doc.scenarios, activeScenarioId]
   );
+  const diagramDoc = useMemo(() => scenarioDocument(doc, activeScenarioId), [doc, activeScenarioId]);
 
   const visibleNodes = useMemo<PsNode[]>(() => {
-    let nodes = doc.nodes;
+    let nodes = diagramDoc.nodes;
     if (activeScenario) {
       const allow = new Set(activeScenario.nodeIds);
       nodes = nodes.filter((n) => allow.has(n.id));
@@ -4586,11 +4601,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       nodes = nodes.filter((n) => n.type === filter.nodeType);
     }
     return nodes;
-  }, [doc.nodes, doc.edges, doc.nodeTypes, activeScenario, filter]);
+  }, [diagramDoc.nodes, doc.edges, doc.nodeTypes, activeScenario, filter]);
 
   const visibleEdges = useMemo<PsEdge[]>(() => {
     const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-    let edges = doc.edges.filter(
+    let edges = diagramDoc.edges.filter(
       (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
     );
     if (activeScenario) {
@@ -4640,16 +4655,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
     return edges;
-  }, [doc.edges, doc.data, doc.nodes, doc.nodeTypes, doc.scenarios, visibleNodes, activeScenario, filter]);
+  }, [diagramDoc.edges, doc.data, doc.nodes, doc.nodeTypes, doc.scenarios, visibleNodes, activeScenario, filter]);
 
   const visibleBoundaries = useMemo<PsBoundary[]>(() => {
-    if (!activeScenario) return doc.boundaries;
+    if (!activeScenario) return diagramDoc.boundaries;
     const allow = new Set(activeScenario.boundaryIds);
-    return doc.boundaries.filter((b) => allow.has(b.id));
-  }, [doc.boundaries, activeScenario]);
+    return diagramDoc.boundaries.filter((b) => allow.has(b.id));
+  }, [diagramDoc.boundaries, activeScenario]);
 
-  const visibleTextAnnotations = useMemo(() => (doc.textAnnotations ?? []).filter(annotation =>
-    !activeScenario || activeScenario.textAnnotationIds?.includes(annotation.id)), [doc.textAnnotations, activeScenario]);
+  const visibleTextAnnotations = useMemo(() => (diagramDoc.textAnnotations ?? []).filter(annotation =>
+    !activeScenario || activeScenario.textAnnotationIds?.includes(annotation.id)), [diagramDoc.textAnnotations, activeScenario]);
 
   const edgeNumberFor = useCallback(
     (edgeId: string): number | null => {
@@ -5198,6 +5213,7 @@ export function normalizeDoc(
       edgeNumbers: { ...fallbackNumbers, ...Object.fromEntries(
         Object.entries(s.edgeNumbers ?? {}).filter(([, n]) => typeof n === "number" && Number.isFinite(n))) },
       boundaryIds,
+      ...(s.layout === undefined ? {} : { layout: normalizeScenarioLayout(s.layout) }),
       ...normalizeTextAnnotationIds(s, textAnnotations ?? []),
       nodeData,
       edgeRequestData,
@@ -5326,7 +5342,7 @@ export function normalizeDoc(
     normalizedBoundaries = adopted.boundaries;
   }
 
-  return {
+  return pruneScenarioLayouts({
     version: 1,
     authenticationDefinitions,
     protocolDefinitions,
@@ -5344,6 +5360,9 @@ export function normalizeDoc(
       const protocolId = validateProtocolReference(rawProtocolId === null ? undefined : rawProtocolId);
       const rawApplicationId = (e as { applicationId?: unknown }).applicationId;
       const applicationId = typeof rawApplicationId === "string" ? rawApplicationId : undefined;
+      if (e.compactLabel !== undefined && typeof e.compactLabel !== "boolean") {
+        throw new Error("Invalid optimized route metadata: compactLabel must be boolean.");
+      }
       return {
         id: e.id ?? uid("e"),
         ...normalizeEntityMetadata(e, "edge"),
@@ -5361,6 +5380,7 @@ export function normalizeDoc(
         audience: optionalText(e.audience),
         constraints: optionalText(e.constraints),
         problem: e.problem === true ? true : undefined,
+        ...(e.compactLabel === undefined ? {} : { compactLabel: e.compactLabel }),
         waypoints: (e.waypoints ?? []).map((w) => ({
           id: w?.id ?? uid("w"),
           ...positionOr(w),
@@ -5520,7 +5540,7 @@ export function normalizeDoc(
       };
     }),
     workItems,
-  };
+  });
 }
 
 // Re-exports for convenience

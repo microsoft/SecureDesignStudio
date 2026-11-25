@@ -474,11 +474,24 @@ test("regression: exact review sources retain drafts and fail honestly after rem
 
 const declutterMeaning = doc => ({
   ...doc,
+  scenarios: doc.scenarios.map(({ layout, ...rest }) => rest),
   nodes: doc.nodes.map(({ position, ...rest }) => rest),
-  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, ...rest }) => rest),
+  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, compactLabel, ...rest }) => rest),
   boundaries: doc.boundaries.map(({ position, size, ...rest }) => rest),
   ...(doc.textAnnotations ? { textAnnotations: doc.textAnnotations.map(({ position, ...rest }) => rest) } : {}),
 });
+
+function scenarioGeometry(doc, id) {
+  const layout = doc.scenarios.find(item => item.id === id)?.layout;
+  if (!layout) return doc;
+  return {
+    ...doc,
+    nodes: doc.nodes.map(item => ({ ...item, ...layout.nodes[item.id] })),
+    edges: doc.edges.map(item => ({ ...item, ...layout.edges[item.id] })),
+    boundaries: doc.boundaries.map(item => ({ ...item, ...layout.boundaries[item.id] })),
+    textAnnotations: (doc.textAnnotations ?? []).map(item => ({ ...item, ...layout.annotations[item.id] })),
+  };
+}
 
 async function savedDiagram(page) {
   return page.evaluate(key => {
@@ -511,7 +524,14 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
     const after = await savedDiagram(page);
     assert.deepEqual(after.past.at(-1), before.doc);
     assert.deepEqual(declutterMeaning(after.doc), declutterMeaning(before.doc));
-    assert.notDeepEqual(after.doc.nodes.slice(0, 2).map(node => node.position), before.doc.nodes.slice(0, 2).map(node => node.position));
+    assert.deepEqual(after.doc.nodes, before.doc.nodes, "shared baseline is unchanged");
+    assert.deepEqual(after.doc.edges, before.doc.edges, "shared flow geometry is unchanged");
+    assert.equal(after.doc.scenarios[0].layout.edges.e_request.compactLabel, true);
+    const optimizedPath = await page.locator('path.react-flow__edge-path[id="e_request"]').getAttribute("d");
+    assert.match(optimizedPath, / L /);
+    assert.doesNotMatch(optimizedPath, / C /);
+    assert.notDeepEqual(scenarioGeometry(after.doc, "s_primary").nodes.slice(0, 2).map(node => node.position),
+      before.doc.nodes.slice(0, 2).map(node => node.position));
     assert.deepEqual(after.doc.nodes[2], before.doc.nodes[2], "hidden node unchanged");
     assert.deepEqual(after.doc.edges[2], before.doc.edges[2], "hidden flow unchanged");
     assert.equal(await page.getByRole("button", { name: /Restore.*layout/i }).count(), 0);
@@ -539,8 +559,8 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
     await page.mouse.down();
     await page.mouse.move(box.x + box.width / 2 + 35, box.y + box.height / 2 + 25, { steps: 5 });
     await page.mouse.up();
-    await until(async () => JSON.stringify((await savedDiagram(page)).doc.nodes[0].position) !==
-      JSON.stringify(after.doc.nodes[0].position), "node immediately draggable");
+    await until(async () => JSON.stringify(scenarioGeometry((await savedDiagram(page)).doc, "s_primary").nodes[0].position) !==
+      JSON.stringify(scenarioGeometry(after.doc, "s_primary").nodes[0].position), "node immediately draggable");
     const moved = await savedDiagram(page);
     assert.equal(moved.past.length, after.past.length + 1, "drag has its own history entry");
     await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -593,6 +613,7 @@ for (const dark of [false, true]) {
       await page.locator("#ps-file-open-input").setInputFiles({
         name: "privacy-badges.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fixture)),
       });
+      await page.getByLabel("Document status").getByText("privacy-badges.tma", { exact: true }).waitFor();
       await waitForMeasuredDiagram(page);
       const before = await savedDiagram(page);
       await page.getByRole("button", { name: "Optimize diagram", exact: true }).click();
@@ -688,7 +709,8 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
     await page.getByRole("button", { name: "Optimize diagram", exact: true }).click();
     const arranged = await savedDiagram(page);
     assert.deepEqual(declutterMeaning(arranged.doc), declutterMeaning(before.doc));
-    for (const boundary of arranged.doc.boundaries) for (const node of arranged.doc.nodes) {
+    const drawing = scenarioGeometry(arranged.doc, id(10));
+    for (const boundary of drawing.boundaries) for (const node of drawing.nodes) {
       const inside = node.position.x >= boundary.position.x && node.position.y >= boundary.position.y &&
         node.position.x + node.size.width <= boundary.position.x + boundary.size.width &&
         node.position.y + node.size.height <= boundary.position.y + boundary.size.height;
@@ -735,6 +757,111 @@ test("regression: TM7 declutter retains boundary bindings and visible communicat
     await label.locator(".ps-edge-auth-badge").waitFor({ state: "visible" });
     assert.equal(await label.locator(".ps-edge-auth-badge").innerText(), authText);
     assert.equal(await label.locator(".ps-edge-protocol-badge").innerText(), "HTTPS");
+  });
+});
+
+test("regression: Optimize isolates shared scenario layouts across switching, native Save, autosave and edits", async () => {
+  await harness.run("regression: independent shared scenario geometry", async ({ page, observations }) => {
+    const fixture = modelFixture();
+    fixture.doc.scenarios[1].nodeIds.push("n_client");
+    fixture.doc.scenarios[1].edgeIds.push("e_request");
+    fixture.doc.scenarios[1].edgeNumbers.e_request = 2;
+    fixture.doc.nodes[2].position = { x: 9000, y: 7000 };
+    fixture.doc.boundaries = [{
+      id: "b_shared", title: "Shared boundary", type: "security",
+      nodeIds: ["n_api", "n_archive"], position: { x: -40, y: -40 },
+      size: { width: 10000, height: 8000.5 },
+    }];
+    for (const item of fixture.doc.scenarios) item.boundaryIds = ["b_shared"];
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "shared-layouts.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fixture)),
+    });
+    await page.getByLabel("Document status").getByText("shared-layouts.tma", { exact: true }).waitFor();
+    await scenario(page).selectOption("");
+    await waitForMeasuredDiagram(page);
+    const baseline = (await savedDiagram(page)).doc;
+    assert.equal(baseline.boundaries[0].size.height, 8000.5, "automatic measurement does not round authored boundary geometry");
+    const optimize = page.getByRole("button", { name: "Optimize diagram", exact: true });
+    await scenario(page).selectOption("s_primary");
+    await optimize.click();
+    const savedA = await exportModel(page);
+    assert.ok(savedA.doc.scenarios[0].layout, "native export stores A's layout, not just rendered coordinates");
+    assert.equal(savedA.doc.scenarios[1].layout, undefined);
+    assert.deepEqual(savedA.doc.nodes, baseline.nodes);
+    assert.deepEqual(savedA.doc.edges, baseline.edges);
+    await scenario(page).selectOption("s_archive");
+    await optimize.click();
+    const savedBoth = await exportModel(page);
+    const layoutA = savedBoth.doc.scenarios[0].layout;
+    const layoutB = savedBoth.doc.scenarios[1].layout;
+    assert.deepEqual(layoutA, savedA.doc.scenarios[0].layout);
+    assert.ok(layoutB);
+    assert.notDeepEqual(layoutA.nodes.n_api, layoutB.nodes.n_api, "a shared node has two arrangements");
+    assert.notDeepEqual(layoutA.edges.e_request, layoutB.edges.e_request, "a shared flow has two routes");
+    assert.deepEqual(savedBoth.doc.nodes, baseline.nodes);
+    assert.deepEqual(savedBoth.doc.edges, baseline.edges);
+    assert.deepEqual(savedBoth.doc.boundaries, baseline.boundaries, "global membership and geometry remain unchanged");
+    assert.ok(layoutA.boundaries.b_shared.size.width < 2000 && layoutA.boundaries.b_shared.size.height < 2000,
+      "the primary border excludes the remote other-scenario member after ReactFlow measurement");
+    const assertDrawing = async (id, layout) => {
+      await scenario(page).selectOption(id);
+      await until(() => node(page, "n_api").evaluate((element, position) => {
+        const matrix = new DOMMatrix(getComputedStyle(element).transform);
+        return Math.abs(matrix.e - position.x) < 0.1 && Math.abs(matrix.f - position.y) < 0.1;
+      }, layout.nodes.n_api.position), "rendered shared node uses selected scenario geometry");
+      const sharedLabel = page.locator('.ps-edge-label[data-edge-id="e_request"]');
+      await sharedLabel.waitFor({ state: "attached" });
+      assert.equal(await sharedLabel.count(), 1);
+      await until(() => page.locator('.react-flow__node-boundary[data-id="b_shared"]').evaluate((element, geometry) => {
+        const matrix = new DOMMatrix(getComputedStyle(element).transform);
+        return Math.abs(matrix.e - geometry.position.x) < 0.1 && Math.abs(matrix.f - geometry.position.y) < 0.1
+          && Math.abs(element.offsetWidth - geometry.size.width) <= 1
+          && Math.abs(element.offsetHeight - geometry.size.height) <= 1;
+      }, layout.boundaries.b_shared), "rendered border retains scoped geometry after dimension measurement");
+      assert.deepEqual((await savedDiagram(page)).doc.scenarios.find(item => item.id === id).layout, layout);
+    };
+    await assertDrawing("s_primary", layoutA);
+    await assertDrawing("s_archive", layoutB);
+    await assertDrawing("s_primary", layoutA);
+    const beforeRepeat = await savedDiagram(page);
+    await optimize.click();
+    await waitForMeasuredDiagram(page);
+    const afterRepeat = await savedDiagram(page);
+    assert.deepEqual(afterRepeat.doc, beforeRepeat.doc, "repeat Optimize preserves scoped boundary geometry");
+    assert.deepEqual(afterRepeat.past, beforeRepeat.past, "repeat Optimize adds no history after boundary measurement");
+    assert.deepEqual((await exportModel(page)).doc, savedBoth.doc, "returning to A does not overwrite either native layout");
+    await page.locator("#ps-file-open-input").setInputFiles({
+      name: "shared-layouts-reopened.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(savedBoth)),
+    });
+    await page.getByLabel("Document status").getByText("shared-layouts-reopened.tma", { exact: true }).waitFor();
+    await waitForMeasuredDiagram(page);
+    assert.deepEqual((await savedDiagram(page)).doc, savedBoth.doc, "native reopen preserves the unprojected document");
+    await assertDrawing("s_primary", layoutA);
+    await assertDrawing("s_archive", layoutB);
+    await page.reload();
+    await waitForMeasuredDiagram(page);
+    assert.deepEqual((await exportModel(page)).doc, savedBoth.doc, "autosave retains both native snapshots");
+    await assertDrawing("s_primary", layoutA);
+    await page.getByRole("button", { name: /^Reset canvas zoom to 100%/ }).click();
+    await until(() => page.locator(".react-flow__viewport").evaluate(element =>
+      Math.abs(new DOMMatrix(getComputedStyle(element).transform).a - 1) < 0.0001), "zoom for scoped edit");
+    const box = await node(page, "n_api").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30, { steps: 5 });
+    await page.mouse.up();
+    await until(async () => JSON.stringify((await savedDiagram(page)).doc.scenarios[0].layout.nodes.n_api.position) !==
+      JSON.stringify(layoutA.nodes.n_api.position), "A's edit persists in its snapshot");
+    const edited = await exportModel(page);
+    assert.deepEqual(edited.doc.nodes, baseline.nodes);
+    assert.deepEqual(edited.doc.scenarios[1].layout, layoutB);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual((await exportModel(page)).doc, savedBoth.doc, "Undo restores both complete native arrangements");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.deepEqual((await exportModel(page)).doc, edited.doc, "Redo restores the local edit only");
+    await assertDrawing("s_archive", layoutB);
+    await assertDrawing("s_primary", edited.doc.scenarios[0].layout);
+    observations.outcome = "Unprojected native exports retain independent shared-node/flow layouts through A-B-A, Save/reopen, autosave and drag Undo/Redo.";
   });
 });
 

@@ -301,7 +301,7 @@ function InnerDiagram() {
         nodeIds = [focusTarget.id];
       }
     } else {
-      const edge = doc.edges.find((e) => e.id === focusTarget.id);
+      const edge = visibleEdges.find((e) => e.id === focusTarget.id);
       if (edge) {
         const visible = new Set(visibleNodes.map((n) => n.id));
         nodeIds = [edge.source, edge.target].filter((id) => visible.has(id));
@@ -323,7 +323,7 @@ function InnerDiagram() {
     }
     // Target isn't visible in the current scenario — clear so we don't loop.
     setFocusTarget(null);
-  }, [focusTarget, visibleNodes, visibleBoundaries, visibleTextAnnotations, doc.edges, fitView, setFocusTarget]);
+  }, [focusTarget, visibleNodes, visibleEdges, visibleBoundaries, visibleTextAnnotations, fitView, setFocusTarget]);
 
   useEffect(() => {
     if (fitViewRequest === 0) return;
@@ -643,6 +643,7 @@ function InnerDiagram() {
           title: e.title,
           number: edgeNumberFor(e.id),
           waypoints: e.waypoints,
+          compactLabel: e.compactLabel,
           problem: e.problem === true,
           protocolLabel,
           protocolShortLabel,
@@ -801,6 +802,7 @@ function InnerDiagram() {
             // Only the explicit NodeResizer gesture persists annotation size.
             continue;
           } else if (node.type === "boundary") {
+            if (!resizingBoundaryIdsRef.current.has(node.id)) continue;
             resizeBoundary(
               change.id,
               {

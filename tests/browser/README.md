@@ -184,6 +184,12 @@ and members together, contained nodes/flows remain reachable, title editing and
 resize handles still work, nested borders remain reachable, and Undo/Redo
 restores exact document state.
 
+Optimize contracts distinguish shared baseline geometry from projected scenario
+geometry. Shared-node/flow scenarios retain independent arrangements through
+native Save/reopen, autosave, editing and Undo/Redo. Pure cases cover malformed
+layout rejection, member removal and simultaneous different-scenario peer updates.
+These synthetic checks are not participant-usability evidence.
+
 ### Prompt-to-diagram authoring
 
 `tests/authentication/threat-model-designer.test.mjs` exercises the strict

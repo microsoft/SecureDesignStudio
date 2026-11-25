@@ -38,6 +38,7 @@
 // LocPin (= the shape's centre by default).
 
 import { zipSync, strToU8, unzipSync, strFromU8 } from "fflate";
+import { scenarioDocument } from "./declutterLayout";
 
 import type {
   DataClassification,
@@ -158,12 +159,13 @@ function classificationsForEdge(
 }
 
 function buildPagesFromScenarios(doc: PsDocument, available?: readonly CatalogDefinitionSnapshot[]): PageContent[] {
-  const nodeById = new Map(doc.nodes.map((n) => [n.id, n]));
-  const edgeById = new Map(doc.edges.map((e) => [e.id, e]));
-  const boundaryById = new Map(doc.boundaries.map((b) => [b.id, b]));
   const dataById = new Map(doc.data.map((d) => [d.id, d]));
 
   return doc.scenarios.map((s: Scenario): PageContent => {
+    const drawing = scenarioDocument(doc, s.id);
+    const nodeById = new Map(drawing.nodes.map((n) => [n.id, n]));
+    const edgeById = new Map(drawing.edges.map((e) => [e.id, e]));
+    const boundaryById = new Map(drawing.boundaries.map((b) => [b.id, b]));
     const nodes = s.nodeIds
       .map((id) => nodeById.get(id))
       .filter((n): n is PsNode => !!n);
