@@ -766,12 +766,21 @@ test("regression: Optimize isolates shared scenario layouts across switching, na
     fixture.doc.scenarios[1].nodeIds.push("n_client");
     fixture.doc.scenarios[1].edgeIds.push("e_request");
     fixture.doc.scenarios[1].edgeNumbers.e_request = 2;
+    fixture.doc.nodes[2].position = { x: 9000, y: 7000 };
+    fixture.doc.boundaries = [{
+      id: "b_shared", title: "Shared boundary", type: "security",
+      nodeIds: ["n_api", "n_archive"], position: { x: -40, y: -40 },
+      size: { width: 10000, height: 8000.5 },
+    }];
+    for (const item of fixture.doc.scenarios) item.boundaryIds = ["b_shared"];
     await page.locator("#ps-file-open-input").setInputFiles({
       name: "shared-layouts.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(fixture)),
     });
+    await page.getByLabel("Document status").getByText("shared-layouts.tma", { exact: true }).waitFor();
     await scenario(page).selectOption("");
     await waitForMeasuredDiagram(page);
     const baseline = (await savedDiagram(page)).doc;
+    assert.equal(baseline.boundaries[0].size.height, 8000.5, "automatic measurement does not round authored boundary geometry");
     const optimize = page.getByRole("button", { name: "Optimize diagram", exact: true });
     await scenario(page).selectOption("s_primary");
     await optimize.click();
@@ -791,6 +800,9 @@ test("regression: Optimize isolates shared scenario layouts across switching, na
     assert.notDeepEqual(layoutA.edges.e_request, layoutB.edges.e_request, "a shared flow has two routes");
     assert.deepEqual(savedBoth.doc.nodes, baseline.nodes);
     assert.deepEqual(savedBoth.doc.edges, baseline.edges);
+    assert.deepEqual(savedBoth.doc.boundaries, baseline.boundaries, "global membership and geometry remain unchanged");
+    assert.ok(layoutA.boundaries.b_shared.size.width < 2000 && layoutA.boundaries.b_shared.size.height < 2000,
+      "the primary border excludes the remote other-scenario member after ReactFlow measurement");
     const assertDrawing = async (id, layout) => {
       await scenario(page).selectOption(id);
       await until(() => node(page, "n_api").evaluate((element, position) => {
@@ -800,15 +812,28 @@ test("regression: Optimize isolates shared scenario layouts across switching, na
       const sharedLabel = page.locator('.ps-edge-label[data-edge-id="e_request"]');
       await sharedLabel.waitFor({ state: "attached" });
       assert.equal(await sharedLabel.count(), 1);
+      await until(() => page.locator('.react-flow__node-boundary[data-id="b_shared"]').evaluate((element, geometry) => {
+        const matrix = new DOMMatrix(getComputedStyle(element).transform);
+        return Math.abs(matrix.e - geometry.position.x) < 0.1 && Math.abs(matrix.f - geometry.position.y) < 0.1
+          && Math.abs(element.offsetWidth - geometry.size.width) <= 1
+          && Math.abs(element.offsetHeight - geometry.size.height) <= 1;
+      }, layout.boundaries.b_shared), "rendered border retains scoped geometry after dimension measurement");
       assert.deepEqual((await savedDiagram(page)).doc.scenarios.find(item => item.id === id).layout, layout);
     };
     await assertDrawing("s_primary", layoutA);
     await assertDrawing("s_archive", layoutB);
     await assertDrawing("s_primary", layoutA);
+    const beforeRepeat = await savedDiagram(page);
+    await optimize.click();
+    await waitForMeasuredDiagram(page);
+    const afterRepeat = await savedDiagram(page);
+    assert.deepEqual(afterRepeat.doc, beforeRepeat.doc, "repeat Optimize preserves scoped boundary geometry");
+    assert.deepEqual(afterRepeat.past, beforeRepeat.past, "repeat Optimize adds no history after boundary measurement");
     assert.deepEqual((await exportModel(page)).doc, savedBoth.doc, "returning to A does not overwrite either native layout");
     await page.locator("#ps-file-open-input").setInputFiles({
       name: "shared-layouts-reopened.tma", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(savedBoth)),
     });
+    await page.getByLabel("Document status").getByText("shared-layouts-reopened.tma", { exact: true }).waitFor();
     await waitForMeasuredDiagram(page);
     assert.deepEqual((await savedDiagram(page)).doc, savedBoth.doc, "native reopen preserves the unprojected document");
     await assertDrawing("s_primary", layoutA);

@@ -179,6 +179,40 @@ test("Optimize: saved routes avoid spline overshoot and duplicate render segment
   assert.throws(() => normalizeDoc(doc), /optimized route metadata/);
 });
 
+test("Optimize: scenario boundaries ignore remote other-scenario members without changing global containment", () => {
+  const doc = normalizeDoc(modelFixture().doc);
+  doc.nodes[2].position = { x: 9000, y: 7000 };
+  doc.boundaries = [{ ...boundary("shared_boundary", ["n_api", "n_archive"]),
+    size: { width: 10000, height: 8000 }, title: "Shared", type: "security" }];
+  for (const scenario of doc.scenarios) scenario.boundaryIds = ["shared_boundary"];
+  const original = structuredClone(doc);
+  const other = arrangeScenario(doc, "s_archive");
+  const local = arrangeScenario(other, "s_primary");
+  const drawing = scenarioDocument(local, "s_primary");
+  const visibleOnly = {
+    ...doc, nodes: doc.nodes.slice(0, 2), edges: doc.edges.slice(0, 2),
+    boundaries: doc.boundaries.map(item => ({ ...item, nodeIds: ["n_api"] })),
+  };
+  const expected = declutterDocument(visibleOnly, inputFor(visibleOnly));
+  assert.deepEqual(drawing.boundaries[0], { ...expected.boundaries[0], nodeIds: ["n_api", "n_archive"] });
+  assert.ok(containsRect(drawing.boundaries[0], nodeRect(drawing.nodes[1])));
+  assert.ok(!containsRect(drawing.boundaries[0], nodeRect(doc.nodes[2])), "remote member does not inflate the saved border");
+  assert.deepEqual(local.boundaries, doc.boundaries);
+  assert.deepEqual(local.nodes, doc.nodes);
+  assert.deepEqual(local.scenarios[1].layout, other.scenarios[1].layout);
+  assert.equal(arrangeScenario(local, "s_primary"), local);
+  assert.deepEqual(JSON.parse(JSON.stringify(normalizeDoc(JSON.parse(JSON.stringify(local))))),
+    JSON.parse(JSON.stringify(local)));
+  const filteredGlobal = declutterDocument(doc, inputFor({ ...doc, nodes: doc.nodes.slice(0, 2), edges: doc.edges.slice(0, 2) }));
+  assert.ok(containsRect(filteredGlobal.boundaries[0], nodeRect(doc.nodes[2])), "default filtered global containment is preserved");
+  const all = applyScenarioDeclutter(doc, inputFor(doc), null);
+  for (const id of all.boundaries[0].nodeIds) {
+    assert.ok(containsRect(all.boundaries[0], nodeRect(all.nodes.find(node => node.id === id))));
+  }
+  assert.deepEqual(all.scenarios, doc.scenarios);
+  assert.deepEqual(doc, original);
+});
+
 test("Declutter separates measured labels and nodes for parallel, cyclic, self and disconnected flows without semantic changes", () => {
   const doc = normalizeDoc(modelFixture().doc);
   doc.edges.push(

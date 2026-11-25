@@ -226,6 +226,8 @@ service. Do not enter real customer data.
    arrangement and does not replace saved scenario layouts.
    Optimized flows follow their saved route points without spline overshoot;
    ordinary manual flows retain their curves and labels retain their full styling.
+   Scenario boundaries contain that scenario's members, without expanding around
+   remote members used only by other scenarios. Shared boundary membership is unchanged.
 9. **Review and save.** Choose **Review > Analyze** again, then open
    **Review > Issues** to read the remaining questions. Record anything you
    cannot answer as a comment or work item; do not invent real identities or

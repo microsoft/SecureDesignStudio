@@ -49,7 +49,9 @@ function savedWaypoints(points: Position[], label: Position, previous: Waypoint[
   }));
 }
 
-export function declutterDocument(doc: PsDocument, input: DeclutterInput): PsDocument {
+export function declutterDocument(
+  doc: PsDocument, input: DeclutterInput, containmentNodeIds?: ReadonlySet<string>,
+): PsDocument {
   if (!input.nodes.length && !input.boundaries.length && !input.annotations.length) return doc;
   const visible = new Set(input.nodes.map(node => node.id));
   const memberships = input.boundaries.map(boundary => new Set(boundary.nodeIds.filter(id => visible.has(id))));
@@ -132,8 +134,9 @@ export function declutterDocument(doc: PsDocument, input: DeclutterInput): PsDoc
     const arranged = boundaryRects.get(boundary.id);
     if (!arranged && !boundary.nodeIds.some(id => nodeRects.has(id))) return boundary;
     let rect = arranged ?? boundary;
-    // Geometry is shared: retain containment for members hidden by this view.
+    // Global/filtered views retain hidden members; saved scenarios contain only their members.
     for (const id of boundary.nodeIds) {
+      if (containmentNodeIds && !containmentNodeIds.has(id)) continue;
       const node = nodeMap.get(id);
       if (node) rect = expandRectToContain(rect, nodeRect(node));
     }
@@ -250,7 +253,7 @@ export function applyScenarioDeclutter(
   const scenario = doc.scenarios.find(item => item.id === scenarioId);
   if (!scenario) return declutterDocument(doc, input);
   const projected = scenarioDocument(doc, scenario.id);
-  const next = declutterDocument(projected, input);
+  const next = declutterDocument(projected, input, new Set(scenario.nodeIds));
   if (next === projected) return doc;
   const saved = captureScenarioLayout(next, scenario);
   return { ...doc, scenarios: doc.scenarios.map(item => item.id === scenario.id

@@ -802,6 +802,7 @@ function InnerDiagram() {
             // Only the explicit NodeResizer gesture persists annotation size.
             continue;
           } else if (node.type === "boundary") {
+            if (!resizingBoundaryIdsRef.current.has(node.id)) continue;
             resizeBoundary(
               change.id,
               {

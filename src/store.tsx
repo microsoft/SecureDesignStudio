@@ -3234,15 +3234,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const resizeBoundary = useCallback(
     (id: string, size: Size, position?: Position) => {
+      const scenarioId = activeScenarioIdRef.current;
       setDoc((d) => {
         const boundary = d.boundaries.find((item) => item.id === id);
         if (!boundary) return d;
+        const scenario = d.scenarios.find((item) => item.id === scenarioId);
+        const scopeNodeIds = scenario?.layout ? new Set(scenario.nodeIds) : null;
         let rect = {
           position: position ?? boundary.position,
           size,
         };
         for (const node of d.nodes) {
-          if (boundary.nodeIds.includes(node.id)) {
+          if (boundary.nodeIds.includes(node.id) && (!scopeNodeIds || scopeNodeIds.has(node.id))) {
             rect = expandRectToContain(rect, nodeRect(node));
           }
         }
