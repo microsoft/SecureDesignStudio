@@ -152,11 +152,11 @@ export function declutterDocument(doc: PsDocument, input: DeclutterInput): PsDoc
     const route = routes.get(edge.id);
     if (!route) return edge;
     const waypoints = savedWaypoints(route.points, route.label, edge.waypoints);
-    if (edge.sourceHandle === route.sourceHandle && edge.targetHandle === route.targetHandle &&
+    if (edge.compactLabel === true && edge.sourceHandle === route.sourceHandle && edge.targetHandle === route.targetHandle &&
         edge.waypoints.length === waypoints.length &&
         edge.waypoints.every((point, i) => samePosition(point, waypoints[i]))) return edge;
     changed = true;
-    return { ...edge, waypoints, sourceHandle: route.sourceHandle, targetHandle: route.targetHandle };
+    return { ...edge, waypoints, sourceHandle: route.sourceHandle, targetHandle: route.targetHandle, compactLabel: true };
   });
   return changed ? {
     ...doc, nodes, boundaries, edges: nextEdges,

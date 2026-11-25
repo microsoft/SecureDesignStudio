@@ -643,6 +643,7 @@ function InnerDiagram() {
           title: e.title,
           number: edgeNumberFor(e.id),
           waypoints: e.waypoints,
+          compactLabel: e.compactLabel,
           problem: e.problem === true,
           protocolLabel,
           protocolShortLabel,

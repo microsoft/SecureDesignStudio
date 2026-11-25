@@ -476,7 +476,7 @@ const declutterMeaning = doc => ({
   ...doc,
   scenarios: doc.scenarios.map(({ layout, ...rest }) => rest),
   nodes: doc.nodes.map(({ position, ...rest }) => rest),
-  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, ...rest }) => rest),
+  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, compactLabel, ...rest }) => rest),
   boundaries: doc.boundaries.map(({ position, size, ...rest }) => rest),
   ...(doc.textAnnotations ? { textAnnotations: doc.textAnnotations.map(({ position, ...rest }) => rest) } : {}),
 });
@@ -526,6 +526,10 @@ test("regression: Declutter saves visible geometry with full labels, immediate d
     assert.deepEqual(declutterMeaning(after.doc), declutterMeaning(before.doc));
     assert.deepEqual(after.doc.nodes, before.doc.nodes, "shared baseline is unchanged");
     assert.deepEqual(after.doc.edges, before.doc.edges, "shared flow geometry is unchanged");
+    assert.equal(after.doc.scenarios[0].layout.edges.e_request.compactLabel, true);
+    const optimizedPath = await page.locator('path.react-flow__edge-path[id="e_request"]').getAttribute("d");
+    assert.match(optimizedPath, / L /);
+    assert.doesNotMatch(optimizedPath, / C /);
     assert.notDeepEqual(scenarioGeometry(after.doc, "s_primary").nodes.slice(0, 2).map(node => node.position),
       before.doc.nodes.slice(0, 2).map(node => node.position));
     assert.deepEqual(after.doc.nodes[2], before.doc.nodes[2], "hidden node unchanged");
@@ -793,7 +797,9 @@ test("regression: Optimize isolates shared scenario layouts across switching, na
         const matrix = new DOMMatrix(getComputedStyle(element).transform);
         return Math.abs(matrix.e - position.x) < 0.1 && Math.abs(matrix.f - position.y) < 0.1;
       }, layout.nodes.n_api.position), "rendered shared node uses selected scenario geometry");
-      assert.equal(await page.locator('.ps-edge-label[data-edge-id="e_request"]').count(), 1);
+      const sharedLabel = page.locator('.ps-edge-label[data-edge-id="e_request"]');
+      await sharedLabel.waitFor({ state: "attached" });
+      assert.equal(await sharedLabel.count(), 1);
       assert.deepEqual((await savedDiagram(page)).doc.scenarios.find(item => item.id === id).layout, layout);
     };
     await assertDrawing("s_primary", layoutA);

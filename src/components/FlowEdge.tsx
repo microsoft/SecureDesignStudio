@@ -17,6 +17,7 @@ export interface FlowEdgeData {
   title: string;
   number: number | null;
   waypoints: Waypoint[];
+  compactLabel?: boolean;
   problem?: boolean;
   commentActive?: number;
   commentResolved?: number;
@@ -60,6 +61,13 @@ function splinePath(pts: Position[]): string {
     d += ` C ${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
   }
   return d;
+}
+
+export function flowEdgePath(points: Position[], optimized = false): string {
+  if (!optimized) return splinePath(points);
+  const distinct = points.filter((point, index) => index === 0
+    || point.x !== points[index - 1].x || point.y !== points[index - 1].y);
+  return distinct.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x},${point.y}`).join(" ");
 }
 
 function distToSegmentSq(p: Position, a: Position, b: Position): number {
@@ -232,7 +240,7 @@ export function FlowEdge({
   const source: Position = { x: sourceX, y: sourceY };
   const target: Position = { x: targetX, y: targetY };
   const polyline: Position[] = [source, ...d.waypoints, target];
-  const path = splinePath(polyline);
+  const path = flowEdgePath(polyline, d.compactLabel === true);
   const strokeColor = d.problem
     ? "#dc2626"
     : d.simulationActive

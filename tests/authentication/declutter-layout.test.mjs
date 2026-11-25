@@ -12,6 +12,7 @@ const { reconcileLocalToY, buildDocFromY } = await import("../../src/collab/reco
 const { containsRect, nodeRect } = await import("../../src/boundaryGeometry.ts");
 const { exportTm7 } = await import("../../src/tm7Export.ts");
 const { exportVsdx } = await import("../../src/vsdxExport.ts");
+const { flowEdgePath } = await import("../../src/components/FlowEdge.tsx");
 
 const canonical = doc => Object.fromEntries(Object.entries(doc).map(([key, value]) => [key,
   Array.isArray(value) ? value.toSorted((a, b) => a.id.localeCompare(b.id)) : value]));
@@ -157,9 +158,25 @@ const inputFor = doc => ({
 const meaning = doc => ({
   ...doc,
   nodes: doc.nodes.map(({ position, ...rest }) => rest),
-  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, ...rest }) => rest),
+  edges: doc.edges.map(({ sourceHandle, targetHandle, waypoints, compactLabel, ...rest }) => rest),
   boundaries: doc.boundaries.map(({ position, size, ...rest }) => rest),
   ...(doc.textAnnotations ? { textAnnotations: doc.textAnnotations.map(({ position, ...rest }) => rest) } : {}),
+});
+
+test("Optimize: saved routes avoid spline overshoot and duplicate render segments while manual routes remain splines", () => {
+  const points = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 0 },
+    { x: 600, y: 20 }, { x: 610, y: 20 }];
+  const original = structuredClone(points);
+  assert.equal(flowEdgePath(points, true), "M 0,0 L 600,0 L 600,20 L 610,20");
+  assert.match(flowEdgePath(points), / C /);
+  assert.deepEqual(points, original, "render deduplication does not change saved waypoints or label anchor");
+  const doc = normalizeDoc(modelFixture().doc);
+  doc.edges[0].compactLabel = true;
+  assert.equal(normalizeDoc(JSON.parse(JSON.stringify(doc))).edges[0].compactLabel, true);
+  doc.edges[0].compactLabel = false;
+  assert.equal(normalizeDoc(doc).edges[0].compactLabel, false);
+  doc.edges[0].compactLabel = "true";
+  assert.throws(() => normalizeDoc(doc), /optimized route metadata/);
 });
 
 test("Declutter separates measured labels and nodes for parallel, cyclic, self and disconnected flows without semantic changes", () => {

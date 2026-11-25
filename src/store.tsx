@@ -5357,6 +5357,9 @@ export function normalizeDoc(
       const protocolId = validateProtocolReference(rawProtocolId === null ? undefined : rawProtocolId);
       const rawApplicationId = (e as { applicationId?: unknown }).applicationId;
       const applicationId = typeof rawApplicationId === "string" ? rawApplicationId : undefined;
+      if (e.compactLabel !== undefined && typeof e.compactLabel !== "boolean") {
+        throw new Error("Invalid optimized route metadata: compactLabel must be boolean.");
+      }
       return {
         id: e.id ?? uid("e"),
         ...normalizeEntityMetadata(e, "edge"),
@@ -5374,6 +5377,7 @@ export function normalizeDoc(
         audience: optionalText(e.audience),
         constraints: optionalText(e.constraints),
         problem: e.problem === true ? true : undefined,
+        ...(e.compactLabel === undefined ? {} : { compactLabel: e.compactLabel }),
         waypoints: (e.waypoints ?? []).map((w) => ({
           id: w?.id ?? uid("w"),
           ...positionOr(w),

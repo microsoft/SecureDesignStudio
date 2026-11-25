@@ -224,6 +224,8 @@ service. Do not enter real customer data.
    scenario does not replace it. Save/open and recovery retain these layouts;
    node and flow properties remain shared. **Show all** retains the shared
    arrangement and does not replace saved scenario layouts.
+   Optimized flows follow their saved route points without spline overshoot;
+   ordinary manual flows retain their curves and labels retain their full styling.
 9. **Review and save.** Choose **Review > Analyze** again, then open
    **Review > Issues** to read the remaining questions. Record anything you
    cannot answer as a comment or work item; do not invent real identities or
